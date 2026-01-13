@@ -8,6 +8,7 @@ import { ExecutiveGrid } from '@/components/executives/ExecutiveGrid';
 import { TalkingItems } from '@/components/dashboard/TalkingItems';
 import { MetricsToReview } from '@/components/dashboard/MetricsToReview';
 import { MeetingNotes } from '@/components/dashboard/MeetingNotes';
+import { generatePDFReport } from '@/components/dashboard/PDFReport';
 import { getDashboardDataExtended, getDashboardDataForWeek } from '@/lib/data/mockData';
 import { getCurrentWeekOf } from '@/lib/utils/formatting';
 import { DashboardDataExtended, DashboardTab, TalkingItem, MetricReviewItem, MeetingNotes as MeetingNotesType } from '@/types';
@@ -23,6 +24,7 @@ export default function DashboardPage() {
   const [talkingItems, setTalkingItems] = useState<TalkingItem[]>([]);
   const [metricsToReview, setMetricsToReview] = useState<MetricReviewItem[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<MeetingNotesType | undefined>(undefined);
+  const [isExporting, setIsExporting] = useState(false);
 
   const currentWeek = getCurrentWeekOf();
   const isPastWeek = selectedWeek < currentWeek;
@@ -94,6 +96,18 @@ export default function DashboardPage() {
     // For now, just log it - the metric review status will be updated by the parent handler
   };
 
+  const handleExportPDF = async () => {
+    if (!data) return;
+    setIsExporting(true);
+    try {
+      await generatePDFReport(data, selectedWeek);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -148,6 +162,8 @@ export default function DashboardPage() {
         lastRefreshed={data.lastRefreshed}
         onRefresh={handleRefresh}
         isRefreshing={isRefreshing}
+        onExportPDF={handleExportPDF}
+        isExporting={isExporting}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -232,7 +248,7 @@ export default function DashboardPage() {
         )}
 
         {activeTab === 'meeting-notes' && meetingNotes && (
-          <MeetingNotes notes={meetingNotes} executives={data.executives} />
+          <MeetingNotes notes={meetingNotes} />
         )}
       </main>
     </div>

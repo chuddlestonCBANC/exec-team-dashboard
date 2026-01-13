@@ -1,6 +1,6 @@
 'use client';
 
-import { RefreshCw, Settings, User } from 'lucide-react';
+import { RefreshCw, Settings, User, Download } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { WeekSelector } from '@/components/ui/WeekSelector';
@@ -12,6 +12,8 @@ interface DashboardHeaderProps {
   lastRefreshed?: string;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  onExportPDF?: () => void;
+  isExporting?: boolean;
 }
 
 export function DashboardHeader({
@@ -20,6 +22,8 @@ export function DashboardHeader({
   lastRefreshed,
   onRefresh,
   isRefreshing,
+  onExportPDF,
+  isExporting,
 }: DashboardHeaderProps) {
   return (
     <header className="bg-white border-b border-[var(--gray-200)] sticky top-0 z-40">
@@ -52,6 +56,20 @@ export function DashboardHeader({
                 <span className="hidden md:block text-xs text-[var(--gray-500)]">
                   Updated {formatRelativeTime(lastRefreshed)}
                 </span>
+              )}
+              {onExportPDF && (
+                <button
+                  onClick={onExportPDF}
+                  disabled={isExporting}
+                  className="p-2 rounded-lg hover:bg-[var(--gray-50)] transition-colors disabled:opacity-50"
+                  aria-label="Export PDF"
+                  title="Export PDF Report"
+                >
+                  <Download
+                    size={18}
+                    className={`text-[var(--gray-500)] ${isExporting ? 'animate-pulse' : ''}`}
+                  />
+                </button>
               )}
               <button
                 onClick={onRefresh}
