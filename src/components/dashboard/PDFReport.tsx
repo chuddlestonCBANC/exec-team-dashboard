@@ -1,192 +1,7 @@
 'use client';
 
-import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
-import { DashboardDataExtended, PillarWithScore, MetricWithDetails, OverviewSummary } from '@/types';
+import { DashboardDataExtended, MetricWithDetails } from '@/types';
 import { format, parseISO } from 'date-fns';
-
-// PDF Styles
-const styles = StyleSheet.create({
-  page: {
-    padding: 40,
-    fontSize: 11,
-    fontFamily: 'Helvetica',
-    backgroundColor: '#ffffff',
-  },
-  header: {
-    marginBottom: 20,
-    borderBottomWidth: 2,
-    borderBottomColor: '#6941C6',
-    paddingBottom: 15,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 10,
-    backgroundColor: '#f3f4f6',
-    padding: 8,
-  },
-  overviewBox: {
-    backgroundColor: '#f9fafb',
-    padding: 15,
-    marginBottom: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#6941C6',
-  },
-  overviewScore: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#6941C6',
-    marginBottom: 5,
-  },
-  overviewLabel: {
-    fontSize: 10,
-    color: '#6b7280',
-    marginBottom: 10,
-  },
-  narrative: {
-    fontSize: 10,
-    color: '#374151',
-    lineHeight: 1.5,
-    marginBottom: 8,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1f2937',
-  },
-  statLabel: {
-    fontSize: 8,
-    color: '#6b7280',
-  },
-  pillarCard: {
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  pillarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  pillarName: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    flex: 1,
-  },
-  pillarScore: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  greenBadge: {
-    backgroundColor: '#dcfce7',
-    color: '#166534',
-  },
-  yellowBadge: {
-    backgroundColor: '#fef3c7',
-    color: '#92400e',
-  },
-  redBadge: {
-    backgroundColor: '#fee2e2',
-    color: '#991b1b',
-  },
-  metricRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  metricName: {
-    fontSize: 10,
-    color: '#374151',
-    flex: 1,
-  },
-  metricValue: {
-    fontSize: 10,
-    color: '#1f2937',
-    width: 80,
-    textAlign: 'right',
-  },
-  metricTarget: {
-    fontSize: 10,
-    color: '#6b7280',
-    width: 80,
-    textAlign: 'right',
-  },
-  metricStatus: {
-    fontSize: 9,
-    width: 50,
-    textAlign: 'center',
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-    borderRadius: 2,
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 30,
-    left: 40,
-    right: 40,
-    textAlign: 'center',
-    fontSize: 9,
-    color: '#9ca3af',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    paddingTop: 10,
-  },
-  pageNumber: {
-    position: 'absolute',
-    bottom: 30,
-    right: 40,
-    fontSize: 9,
-    color: '#9ca3af',
-  },
-});
-
-// Helper to get badge style based on status
-const getStatusStyle = (status: string) => {
-  switch (status) {
-    case 'green':
-      return styles.greenBadge;
-    case 'yellow':
-      return styles.yellowBadge;
-    case 'red':
-      return styles.redBadge;
-    default:
-      return {};
-  }
-};
 
 // Format metric value based on format type
 const formatMetricValue = (metric: MetricWithDetails): string => {
@@ -213,150 +28,299 @@ const formatTargetValue = (metric: MetricWithDetails): string => {
   }
 };
 
-// PDF Document Component
-interface PDFReportDocumentProps {
-  data: DashboardDataExtended;
-  weekOf: string;
-}
-
-function PDFReportDocument({ data, weekOf }: PDFReportDocumentProps) {
-  const { overview, pillars } = data;
-
-  return (
-    <Document>
-      {/* Page 1: Overview */}
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Executive Dashboard Report</Text>
-          <Text style={styles.subtitle}>
-            Week of {format(parseISO(weekOf), 'MMMM d, yyyy')} • Generated {format(new Date(), "MMM d, yyyy 'at' h:mm a")}
-          </Text>
-        </View>
-
-        {/* Overview Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Weekly Summary</Text>
-          <View style={styles.overviewBox}>
-            <Text style={styles.overviewScore}>{overview.overallScore}%</Text>
-            <Text style={styles.overviewLabel}>Overall Performance Score</Text>
-            {overview.narrative.split('\n\n').map((paragraph, index) => (
-              <Text key={index} style={styles.narrative}>
-                {paragraph}
-              </Text>
-            ))}
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{overview.pillarsOnTrack}</Text>
-                <Text style={styles.statLabel}>On Track</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{overview.pillarsAtRisk}</Text>
-                <Text style={styles.statLabel}>At Risk</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{overview.pillarsOffTrack}</Text>
-                <Text style={styles.statLabel}>Off Track</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{overview.activeCommitments}</Text>
-                <Text style={styles.statLabel}>Active Commitments</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{overview.metricsImproved}</Text>
-                <Text style={styles.statLabel}>Improving</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Highlights & Concerns */}
-        {(overview.highlights.length > 0 || overview.concerns.length > 0) && (
-          <View style={styles.section}>
-            {overview.highlights.length > 0 && (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#166534', marginBottom: 5 }}>
-                  Highlights
-                </Text>
-                {overview.highlights.map((highlight, index) => (
-                  <Text key={index} style={{ fontSize: 10, color: '#374151', marginBottom: 3 }}>
-                    • {highlight}
-                  </Text>
-                ))}
-              </View>
-            )}
-            {overview.concerns.length > 0 && (
-              <View>
-                <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#991b1b', marginBottom: 5 }}>
-                  Concerns
-                </Text>
-                {overview.concerns.map((concern, index) => (
-                  <Text key={index} style={{ fontSize: 10, color: '#374151', marginBottom: 3 }}>
-                    • {concern}
-                  </Text>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
-        <Text style={styles.footer}>Hapax Executive Dashboard</Text>
-        <Text style={styles.pageNumber}>Page 1</Text>
-      </Page>
-
-      {/* Page 2+: Pillars and Metrics */}
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Strategic Pillars & Metrics</Text>
-          <Text style={styles.subtitle}>Detailed breakdown by pillar</Text>
-        </View>
-
-        {pillars.map((pillar, pillarIndex) => (
-          <View key={pillar.id} style={styles.pillarCard} wrap={false}>
-            <View style={styles.pillarHeader}>
-              <Text style={styles.pillarName}>{pillar.name}</Text>
-              <Text style={[styles.pillarScore, getStatusStyle(pillar.status)]}>
-                {pillar.score}%
-              </Text>
-            </View>
-
-            {/* Metric Headers */}
-            <View style={[styles.metricRow, { borderBottomColor: '#d1d5db' }]}>
-              <Text style={[styles.metricName, { fontWeight: 'bold', fontSize: 9 }]}>Metric</Text>
-              <Text style={[styles.metricValue, { fontWeight: 'bold', fontSize: 9 }]}>Current</Text>
-              <Text style={[styles.metricTarget, { fontWeight: 'bold', fontSize: 9 }]}>Target</Text>
-              <Text style={[styles.metricStatus, { fontWeight: 'bold', fontSize: 9 }]}>Status</Text>
-            </View>
-
-            {/* Metrics */}
-            {pillar.metrics.map((metric) => (
-              <View key={metric.id} style={styles.metricRow}>
-                <Text style={styles.metricName}>{metric.name}</Text>
-                <Text style={styles.metricValue}>{formatMetricValue(metric)}</Text>
-                <Text style={styles.metricTarget}>{formatTargetValue(metric)}</Text>
-                <Text style={[styles.metricStatus, getStatusStyle(metric.status)]}>
-                  {metric.status.toUpperCase()}
-                </Text>
-              </View>
-            ))}
-          </View>
-        ))}
-
-        <Text style={styles.footer}>Hapax Executive Dashboard</Text>
-        <Text style={styles.pageNumber}>Page 2</Text>
-      </Page>
-    </Document>
-  );
-}
-
 // Export function to generate and download PDF
 export async function generatePDFReport(data: DashboardDataExtended, weekOf: string): Promise<void> {
-  const blob = await pdf(<PDFReportDocument data={data} weekOf={weekOf} />).toBlob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `hapax-dashboard-report-${weekOf}.pdf`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  // Dynamically import jspdf to avoid SSR issues
+  const { default: jsPDF } = await import('jspdf');
+
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 20;
+  const contentWidth = pageWidth - margin * 2;
+  let yPos = margin;
+
+  const { overview, pillars } = data;
+
+  // Colors
+  const primaryColor = '#6941C6';
+  const darkGray = '#1f2937';
+  const mediumGray = '#6b7280';
+  const lightGray = '#9ca3af';
+
+  // Helper function to add text with wrapping
+  const addWrappedText = (text: string, x: number, y: number, maxWidth: number, fontSize: number, color: string = darkGray): number => {
+    doc.setFontSize(fontSize);
+    doc.setTextColor(color);
+    const lines = doc.splitTextToSize(text, maxWidth);
+    doc.text(lines, x, y);
+    return y + lines.length * (fontSize * 0.4);
+  };
+
+  // Helper to check if we need a new page
+  const checkNewPage = (neededSpace: number): void => {
+    if (yPos + neededSpace > doc.internal.pageSize.getHeight() - margin) {
+      doc.addPage();
+      yPos = margin;
+    }
+  };
+
+  // === PAGE 1: OVERVIEW ===
+
+  // Header
+  doc.setFontSize(22);
+  doc.setTextColor(darkGray);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Executive Dashboard Report', margin, yPos);
+  yPos += 8;
+
+  doc.setFontSize(10);
+  doc.setTextColor(mediumGray);
+  doc.setFont('helvetica', 'normal');
+  doc.text(
+    `Week of ${format(parseISO(weekOf), 'MMMM d, yyyy')} • Generated ${format(new Date(), "MMM d, yyyy 'at' h:mm a")}`,
+    margin,
+    yPos
+  );
+  yPos += 5;
+
+  // Header line
+  doc.setDrawColor(primaryColor);
+  doc.setLineWidth(0.5);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 15;
+
+  // Weekly Summary Section
+  doc.setFontSize(14);
+  doc.setTextColor(darkGray);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Weekly Summary', margin, yPos);
+  yPos += 10;
+
+  // Overall Score
+  doc.setFontSize(36);
+  doc.setTextColor(primaryColor);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`${overview.overallScore}%`, margin, yPos);
+  yPos += 5;
+
+  doc.setFontSize(10);
+  doc.setTextColor(mediumGray);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Overall Performance Score', margin, yPos);
+  yPos += 10;
+
+  // Narrative paragraphs
+  const paragraphs = overview.narrative.split('\n\n');
+  for (const paragraph of paragraphs) {
+    yPos = addWrappedText(paragraph, margin, yPos, contentWidth, 10, darkGray);
+    yPos += 5;
+  }
+  yPos += 5;
+
+  // Stats row
+  const statsWidth = contentWidth / 5;
+  const stats = [
+    { value: overview.pillarsOnTrack, label: 'On Track' },
+    { value: overview.pillarsAtRisk, label: 'At Risk' },
+    { value: overview.pillarsOffTrack, label: 'Off Track' },
+    { value: overview.activeCommitments, label: 'Commitments' },
+    { value: overview.metricsImproved, label: 'Improving' },
+  ];
+
+  doc.setDrawColor('#e5e7eb');
+  doc.setLineWidth(0.3);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 8;
+
+  stats.forEach((stat, index) => {
+    const xPos = margin + index * statsWidth;
+    doc.setFontSize(16);
+    doc.setTextColor(darkGray);
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(stat.value), xPos, yPos);
+
+    doc.setFontSize(8);
+    doc.setTextColor(mediumGray);
+    doc.setFont('helvetica', 'normal');
+    doc.text(stat.label, xPos, yPos + 5);
+  });
+  yPos += 15;
+
+  // Highlights
+  if (overview.highlights.length > 0) {
+    checkNewPage(30);
+    doc.setFontSize(11);
+    doc.setTextColor('#166534');
+    doc.setFont('helvetica', 'bold');
+    doc.text('Highlights', margin, yPos);
+    yPos += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(darkGray);
+    doc.setFontSize(10);
+    overview.highlights.forEach((highlight) => {
+      yPos = addWrappedText(`• ${highlight}`, margin, yPos, contentWidth, 10);
+      yPos += 2;
+    });
+    yPos += 5;
+  }
+
+  // Concerns
+  if (overview.concerns.length > 0) {
+    checkNewPage(30);
+    doc.setFontSize(11);
+    doc.setTextColor('#991b1b');
+    doc.setFont('helvetica', 'bold');
+    doc.text('Concerns', margin, yPos);
+    yPos += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(darkGray);
+    doc.setFontSize(10);
+    overview.concerns.forEach((concern) => {
+      yPos = addWrappedText(`• ${concern}`, margin, yPos, contentWidth, 10);
+      yPos += 2;
+    });
+  }
+
+  // Footer for page 1
+  doc.setFontSize(9);
+  doc.setTextColor(lightGray);
+  doc.text('Hapax Executive Dashboard', margin, doc.internal.pageSize.getHeight() - 10);
+  doc.text('Page 1', pageWidth - margin - 15, doc.internal.pageSize.getHeight() - 10);
+
+  // === PAGE 2: PILLARS AND METRICS ===
+  doc.addPage();
+  yPos = margin;
+
+  // Header
+  doc.setFontSize(22);
+  doc.setTextColor(darkGray);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Strategic Pillars & Metrics', margin, yPos);
+  yPos += 8;
+
+  doc.setFontSize(10);
+  doc.setTextColor(mediumGray);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Detailed breakdown by pillar', margin, yPos);
+  yPos += 5;
+
+  doc.setDrawColor(primaryColor);
+  doc.setLineWidth(0.5);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 15;
+
+  // Pillars
+  pillars.forEach((pillar) => {
+    const pillarHeight = 15 + pillar.metrics.length * 8;
+    checkNewPage(pillarHeight);
+
+    // Pillar header
+    doc.setFontSize(12);
+    doc.setTextColor(darkGray);
+    doc.setFont('helvetica', 'bold');
+    doc.text(pillar.name, margin, yPos);
+
+    // Pillar score badge
+    const scoreText = `${pillar.score}%`;
+    const scoreWidth = doc.getTextWidth(scoreText) + 8;
+    const scoreX = pageWidth - margin - scoreWidth;
+
+    // Badge background
+    let badgeColor: string;
+    switch (pillar.status) {
+      case 'green':
+        badgeColor = '#dcfce7';
+        doc.setTextColor('#166534');
+        break;
+      case 'yellow':
+        badgeColor = '#fef3c7';
+        doc.setTextColor('#92400e');
+        break;
+      case 'red':
+        badgeColor = '#fee2e2';
+        doc.setTextColor('#991b1b');
+        break;
+      default:
+        badgeColor = '#f3f4f6';
+        doc.setTextColor(darkGray);
+    }
+
+    doc.setFillColor(badgeColor);
+    doc.roundedRect(scoreX - 2, yPos - 5, scoreWidth + 4, 8, 2, 2, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text(scoreText, scoreX, yPos);
+    yPos += 8;
+
+    // Metric headers
+    const colWidths = [contentWidth * 0.45, contentWidth * 0.18, contentWidth * 0.18, contentWidth * 0.15];
+    const colX = [margin, margin + colWidths[0], margin + colWidths[0] + colWidths[1], margin + colWidths[0] + colWidths[1] + colWidths[2]];
+
+    doc.setFontSize(9);
+    doc.setTextColor(mediumGray);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Metric', colX[0], yPos);
+    doc.text('Current', colX[1], yPos);
+    doc.text('Target', colX[2], yPos);
+    doc.text('Status', colX[3], yPos);
+    yPos += 2;
+
+    doc.setDrawColor('#d1d5db');
+    doc.setLineWidth(0.2);
+    doc.line(margin, yPos, pageWidth - margin, yPos);
+    yPos += 5;
+
+    // Metrics
+    doc.setFont('helvetica', 'normal');
+    pillar.metrics.forEach((metric) => {
+      doc.setFontSize(9);
+      doc.setTextColor(darkGray);
+      doc.text(metric.name.substring(0, 35), colX[0], yPos);
+      doc.text(formatMetricValue(metric), colX[1], yPos);
+      doc.setTextColor(mediumGray);
+      doc.text(formatTargetValue(metric), colX[2], yPos);
+
+      // Status badge
+      let statusColor: string;
+      let statusBg: string;
+      switch (metric.status) {
+        case 'green':
+          statusBg = '#dcfce7';
+          statusColor = '#166534';
+          break;
+        case 'yellow':
+          statusBg = '#fef3c7';
+          statusColor = '#92400e';
+          break;
+        case 'red':
+          statusBg = '#fee2e2';
+          statusColor = '#991b1b';
+          break;
+        default:
+          statusBg = '#f3f4f6';
+          statusColor = darkGray;
+      }
+
+      doc.setFillColor(statusBg);
+      doc.roundedRect(colX[3] - 1, yPos - 3.5, 20, 5, 1, 1, 'F');
+      doc.setTextColor(statusColor);
+      doc.setFontSize(7);
+      doc.text(metric.status.toUpperCase(), colX[3] + 2, yPos);
+
+      yPos += 7;
+    });
+
+    yPos += 8;
+  });
+
+  // Footer for page 2
+  doc.setFontSize(9);
+  doc.setTextColor(lightGray);
+  doc.text('Hapax Executive Dashboard', margin, doc.internal.pageSize.getHeight() - 10);
+  doc.text('Page 2', pageWidth - margin - 15, doc.internal.pageSize.getHeight() - 10);
+
+  // Save the PDF
+  doc.save(`hapax-dashboard-report-${weekOf}.pdf`);
 }
