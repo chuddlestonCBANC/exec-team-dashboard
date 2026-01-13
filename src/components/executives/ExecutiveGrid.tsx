@@ -5,9 +5,10 @@ import { ExecutiveCard } from './ExecutiveCard';
 
 interface ExecutiveGridProps {
   executives: ExecutiveWithDetails[];
+  onSaveReport?: (executiveId: string, content: string) => Promise<void>;
 }
 
-export function ExecutiveGrid({ executives }: ExecutiveGridProps) {
+export function ExecutiveGrid({ executives, onSaveReport }: ExecutiveGridProps) {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold text-[var(--gray-800)]">
@@ -15,7 +16,11 @@ export function ExecutiveGrid({ executives }: ExecutiveGridProps) {
       </h2>
       <div className="space-y-4">
         {executives.map((executive) => (
-          <ExecutiveCard key={executive.id} executive={executive} />
+          <ExecutiveCard
+            key={executive.id}
+            executive={executive}
+            onSaveReport={onSaveReport}
+          />
         ))}
       </div>
     </div>

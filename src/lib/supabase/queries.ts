@@ -16,6 +16,7 @@ import {
   TalkingItem,
   MetricReviewItem,
   MeetingNotes,
+  OverviewReport,
 } from '@/types';
 import { getMetricStatus, getPercentageOfTarget, getPillarScore, calculatePillarStatus } from '@/lib/utils/scoring';
 import { getCurrentWeekOf } from '@/lib/utils/formatting';
@@ -354,6 +355,39 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
 
   log(`getExecutivesWithDetails: Complete - ${detailed.length} executives in ${Date.now() - startTime}ms total`);
   return detailed;
+}
+
+// ============ EXECUTIVE REPORTS ============
+
+export async function saveExecutiveReport(
+  executiveId: string,
+  weekOf: string,
+  content: string
+): Promise<{ id: string; executiveId: string; content: string; weekOf: string; createdAt: string; updatedAt: string }> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('executive_reports')
+    .upsert({
+      executive_id: executiveId,
+      week_of: weekOf,
+      content,
+    }, {
+      onConflict: 'executive_id,week_of',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    executiveId: data.executive_id,
+    content: data.content,
+    weekOf: data.week_of,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
 }
 
 // ============ METRICS ============
@@ -856,6 +890,105 @@ export async function saveMeetingNotes(weekOf: string, content: string): Promise
     content: data.content,
     generatedAt: data.generated_at,
   };
+}
+
+// ============ OVERVIEW REPORTS ============
+
+export async function getOverviewReport(weekOf: string): Promise<OverviewReport | null> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('overview_reports')
+    .select('*, executives(name)')
+    .eq('week_of', weekOf)
+    .single();
+
+  if (error || !data) return null;
+
+  return {
+    id: data.id,
+    weekOf: data.week_of,
+    authorId: data.author_id,
+    authorName: data.executives?.name,
+    narrative: data.narrative,
+    highlights: data.highlights || [],
+    concerns: data.concerns || [],
+    isPublished: data.is_published,
+    publishedAt: data.published_at,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function saveOverviewReport(
+  weekOf: string,
+  authorId: string,
+  narrative: string,
+  highlights: string[],
+  concerns: string[],
+  isPublished: boolean = false
+): Promise<OverviewReport> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('overview_reports')
+    .upsert({
+      week_of: weekOf,
+      author_id: authorId,
+      narrative,
+      highlights,
+      concerns,
+      is_published: isPublished,
+      published_at: isPublished ? new Date().toISOString() : null,
+    })
+    .select('*, executives(name)')
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    weekOf: data.week_of,
+    authorId: data.author_id,
+    authorName: data.executives?.name,
+    narrative: data.narrative,
+    highlights: data.highlights || [],
+    concerns: data.concerns || [],
+    isPublished: data.is_published,
+    publishedAt: data.published_at,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function updateOverviewReport(
+  weekOf: string,
+  updates: {
+    narrative?: string;
+    highlights?: string[];
+    concerns?: string[];
+    isPublished?: boolean;
+  }
+): Promise<void> {
+  const supabase = createClient();
+
+  const dbUpdates: any = {};
+  if (updates.narrative !== undefined) dbUpdates.narrative = updates.narrative;
+  if (updates.highlights !== undefined) dbUpdates.highlights = updates.highlights;
+  if (updates.concerns !== undefined) dbUpdates.concerns = updates.concerns;
+  if (updates.isPublished !== undefined) {
+    dbUpdates.is_published = updates.isPublished;
+    if (updates.isPublished) {
+      dbUpdates.published_at = new Date().toISOString();
+    }
+  }
+
+  const { error } = await supabase
+    .from('overview_reports')
+    .update(dbUpdates)
+    .eq('week_of', weekOf);
+
+  if (error) throw error;
 }
 
 // ============ METRIC REVIEWS ============
@@ -1722,8 +1855,11 @@ export async function getDashboardDataExtended(): Promise<DashboardDataExtended>
   const baseData = await getDashboardData();
   const currentWeek = getCurrentWeekOf();
 
-  log('getDashboardDataExtended: Fetching talking items...');
-  const talkingItems = await getTalkingItems(currentWeek);
+  log('getDashboardDataExtended: Fetching talking items and overview report...');
+  const [talkingItems, overviewReport] = await Promise.all([
+    getTalkingItems(currentWeek),
+    getOverviewReport(currentWeek),
+  ]);
   log(`getDashboardDataExtended: Got ${talkingItems.length} talking items`);
 
   log('getDashboardDataExtended: Generating metrics to review...');
@@ -1736,6 +1872,7 @@ export async function getDashboardDataExtended(): Promise<DashboardDataExtended>
     ...baseData,
     talkingItems,
     metricsToReview,
+    overviewReport: overviewReport || undefined,
   };
 }
 
@@ -1744,15 +1881,19 @@ export async function getDashboardDataForWeek(weekOf: string): Promise<Dashboard
   const currentWeek = getCurrentWeekOf();
   const isPastWeek = weekOf < currentWeek;
 
-  const talkingItems = await getTalkingItems(weekOf);
+  const [talkingItems, overviewReport, meetingNotes] = await Promise.all([
+    getTalkingItems(weekOf),
+    getOverviewReport(weekOf),
+    isPastWeek ? getMeetingNotes(weekOf) : Promise.resolve(null),
+  ]);
   const metricsToReview = await generateMetricsToReview(baseData.pillars, weekOf);
-  const meetingNotes = isPastWeek ? await getMeetingNotes(weekOf) : undefined;
 
   return {
     ...baseData,
     talkingItems,
     metricsToReview,
     meetingNotes: meetingNotes || undefined,
+    overviewReport: overviewReport || undefined,
   };
 }
 

@@ -364,9 +364,25 @@ export interface MeetingNotes {
   content: string; // Full text content from Gemini
 }
 
+// Executive-written overview report for a week
+export interface OverviewReport {
+  id: string;
+  weekOf: string;
+  authorId: string | null;
+  authorName?: string;
+  narrative: string;
+  highlights: string[];
+  concerns: string[];
+  isPublished: boolean;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Extended Dashboard Data with new features
 export interface DashboardDataExtended extends DashboardData {
   talkingItems: TalkingItem[];
   metricsToReview: MetricReviewItem[];
   meetingNotes?: MeetingNotes; // Only present for past weeks
+  overviewReport?: OverviewReport; // Executive-written overview if available
 }

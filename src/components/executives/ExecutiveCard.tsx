@@ -1,10 +1,11 @@
 'use client';
 
 import Image from 'next/image';
-import { ExecutiveWithDetails, CommitmentStatus } from '@/types';
+import { ExecutiveWithDetails, CommitmentStatus, ExecutiveReport } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { getMetricStatus } from '@/lib/utils/scoring';
 import { formatRelativeTime } from '@/lib/utils/formatting';
+import { useAuth } from '@/components/providers/AuthProvider';
 import {
   CheckCircle2,
   Clock,
@@ -13,16 +14,55 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  Edit3,
+  Save,
+  X,
 } from 'lucide-react';
 import { useState } from 'react';
 
 interface ExecutiveCardProps {
   executive: ExecutiveWithDetails;
   isExpanded?: boolean;
+  onSaveReport?: (executiveId: string, content: string) => Promise<void>;
 }
 
-export function ExecutiveCard({ executive, isExpanded: initialExpanded = false }: ExecutiveCardProps) {
+export function ExecutiveCard({ executive, isExpanded: initialExpanded = false, onSaveReport }: ExecutiveCardProps) {
+  const { approvedUser } = useAuth();
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
+  const [isEditingReport, setIsEditingReport] = useState(false);
+  const [editReportContent, setEditReportContent] = useState(executive.report?.content || '');
+  const [isSavingReport, setIsSavingReport] = useState(false);
+
+  // Check if current user can edit this executive's report
+  const canEditReport = approvedUser?.executiveId === executive.id || approvedUser?.role === 'admin';
+
+  const handleStartEditReport = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditReportContent(executive.report?.content || '');
+    setIsEditingReport(true);
+    setIsExpanded(true);
+  };
+
+  const handleCancelEditReport = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditingReport(false);
+    setEditReportContent(executive.report?.content || '');
+  };
+
+  const handleSaveReport = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onSaveReport) return;
+
+    setIsSavingReport(true);
+    try {
+      await onSaveReport(executive.id, editReportContent);
+      setIsEditingReport(false);
+    } catch (error) {
+      console.error('Failed to save report:', error);
+    } finally {
+      setIsSavingReport(false);
+    }
+  };
 
   const activeCommitments = executive.commitments.filter(
     (c) => c.status === 'in_progress' || c.status === 'pending'
@@ -125,14 +165,55 @@ export function ExecutiveCard({ executive, isExpanded: initialExpanded = false }
       {isExpanded && (
         <div className="border-t border-[var(--gray-100)]">
           {/* Weekly Report */}
-          {executive.report && (
-            <div className="p-5 bg-gradient-to-b from-[var(--gray-50)] to-white">
-              <h4 className="text-sm font-semibold text-[var(--gray-800)] mb-4 flex items-center gap-2">
+          <div className="p-5 bg-gradient-to-b from-[var(--gray-50)] to-white">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-[var(--gray-800)] flex items-center gap-2">
                 <svg className="w-4 h-4 text-[var(--primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 Weekly Report
               </h4>
+              {canEditReport && onSaveReport && !isEditingReport && (
+                <button
+                  onClick={handleStartEditReport}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-colors"
+                >
+                  <Edit3 size={14} />
+                  {executive.report ? 'Edit' : 'Write Report'}
+                </button>
+              )}
+              {isEditingReport && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCancelEditReport}
+                    disabled={isSavingReport}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--gray-600)] hover:bg-[var(--gray-100)] rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <X size={14} />
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveReport}
+                    disabled={isSavingReport}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-[var(--primary)] hover:bg-[var(--primary-dark)] rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <Save size={14} />
+                    {isSavingReport ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              )}
+            </div>
+            {isEditingReport ? (
+              <textarea
+                value={editReportContent}
+                onChange={(e) => setEditReportContent(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full h-48 p-3 text-sm text-[var(--gray-700)] leading-relaxed border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)] focus:ring-1 focus:ring-[var(--primary)] resize-none"
+                placeholder="Write your weekly report here...
+
+Share updates on your team's progress, key accomplishments, challenges, and priorities for the coming week."
+              />
+            ) : executive.report ? (
               <div className="prose prose-sm max-w-none">
                 {executive.report.content.split('\n\n').map((paragraph, index) => (
                   <p key={index} className="text-sm text-[var(--gray-600)] leading-relaxed mb-4 last:mb-0">
@@ -140,8 +221,12 @@ export function ExecutiveCard({ executive, isExpanded: initialExpanded = false }
                   </p>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-sm text-[var(--gray-400)] italic">
+                No report submitted for this week yet.
+              </p>
+            )}
+          </div>
 
           {/* Active Commitments */}
           {activeCommitments.length > 0 && (

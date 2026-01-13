@@ -16,12 +16,16 @@ import {
   updateTalkingItem,
   deleteTalkingItem,
   createOrUpdateMetricReview,
+  saveOverviewReport,
+  saveExecutiveReport,
 } from '@/lib/supabase/queries';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { getCurrentWeekOf } from '@/lib/utils/formatting';
-import { DashboardDataExtended, DashboardTab, TalkingItem, MetricReviewItem, MeetingNotes as MeetingNotesType } from '@/types';
+import { DashboardDataExtended, DashboardTab, TalkingItem, MetricReviewItem, MeetingNotes as MeetingNotesType, OverviewReport, ExecutiveWithDetails } from '@/types';
 import { LayoutDashboard, MessageSquare, AlertTriangle, FileText } from 'lucide-react';
 
 export default function DashboardPage() {
+  const { approvedUser } = useAuth();
   const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekOf());
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [data, setData] = useState<DashboardDataExtended | null>(null);
@@ -31,6 +35,8 @@ export default function DashboardPage() {
   const [talkingItems, setTalkingItems] = useState<TalkingItem[]>([]);
   const [metricsToReview, setMetricsToReview] = useState<MetricReviewItem[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<MeetingNotesType | undefined>(undefined);
+  const [overviewReport, setOverviewReport] = useState<OverviewReport | undefined>(undefined);
+  const [executives, setExecutives] = useState<ExecutiveWithDetails[]>([]);
   const [isExporting, setIsExporting] = useState(false);
 
   const currentWeek = getCurrentWeekOf();
@@ -52,6 +58,8 @@ export default function DashboardPage() {
           setTalkingItems(dashboardData.talkingItems);
           setMetricsToReview(dashboardData.metricsToReview);
           setMeetingNotes(dashboardData.meetingNotes);
+          setOverviewReport(dashboardData.overviewReport);
+          setExecutives(dashboardData.executives);
         }
       } catch (error: unknown) {
         // Ignore abort errors (caused by component unmount or StrictMode)
@@ -163,6 +171,59 @@ export default function DashboardPage() {
     // In production, this would create a commitment in the database
     console.log('Adding commitment for metric:', metricId, commitment);
     // For now, just log it - the metric review status will be updated by the parent handler
+  };
+
+  // Overview Report handler
+  const handleSaveOverviewReport = async (narrative: string, highlights: string[], concerns: string[]) => {
+    // Need an executive ID to save the report
+    const executiveId = approvedUser?.executiveId;
+    if (!executiveId) {
+      console.error('No executive ID available to save overview report');
+      return;
+    }
+
+    try {
+      const savedReport = await saveOverviewReport(
+        selectedWeek,
+        executiveId,
+        narrative,
+        highlights,
+        concerns,
+        true // Mark as published immediately
+      );
+      setOverviewReport(savedReport);
+    } catch (error) {
+      console.error('Failed to save overview report:', error);
+      throw error; // Re-throw so the component can handle it
+    }
+  };
+
+  // Executive Report handler
+  const handleSaveExecutiveReport = async (executiveId: string, content: string) => {
+    try {
+      const savedReport = await saveExecutiveReport(executiveId, selectedWeek, content);
+      // Update executives state with the new report
+      setExecutives((prev) =>
+        prev.map((exec) =>
+          exec.id === executiveId
+            ? {
+                ...exec,
+                report: {
+                  id: savedReport.id,
+                  executiveId: savedReport.executiveId,
+                  content: savedReport.content,
+                  weekOf: savedReport.weekOf,
+                  createdAt: savedReport.createdAt,
+                  updatedAt: savedReport.updatedAt,
+                },
+              }
+            : exec
+        )
+      );
+    } catch (error) {
+      console.error('Failed to save executive report:', error);
+      throw error;
+    }
   };
 
   const handleExportPDF = async () => {
@@ -292,7 +353,10 @@ export default function DashboardPage() {
 
             {/* Executive Reports */}
             <section>
-              <ExecutiveGrid executives={data.executives} />
+              <ExecutiveGrid
+                executives={executives}
+                onSaveReport={handleSaveExecutiveReport}
+              />
             </section>
           </>
         )}
