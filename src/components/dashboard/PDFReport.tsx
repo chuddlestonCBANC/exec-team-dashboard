@@ -2,7 +2,6 @@
 
 import { DashboardDataExtended, MetricWithDetails, PillarWithScore } from '@/types';
 import { format, parseISO } from 'date-fns';
-import { getPillarById } from '@/lib/data/mockData';
 
 // Format metric value based on format type
 const formatMetricValue = (metric: MetricWithDetails): string => {
@@ -366,9 +365,8 @@ export async function generatePDFReport(data: DashboardDataExtended, weekOf: str
 
   // Iterate through pillars
   pillars.forEach((pillar) => {
-    // Get full pillar data with all metrics (including drill-down)
-    const fullPillar = getPillarById(pillar.id);
-    const pillarData = fullPillar || pillar;
+    // Use pillar data directly (already includes drill-down metrics from Supabase)
+    const pillarData = pillar;
 
     // Estimate space needed
     const metricsCount = pillarData.metrics.reduce((count, m) => {

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { getMetricById, getExecutives } from '@/lib/data/mockData';
+import { getMetricById, getExecutives, getCurrentPeriodTarget, getPeriodLabel, MetricTarget } from '@/lib/supabase/queries';
 import { MetricWithDetails, Executive } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TrendIndicator } from '@/components/ui/TrendIndicator';
@@ -20,13 +20,33 @@ export default function MetricDetailPage() {
   const params = useParams();
   const [metric, setMetric] = useState<MetricWithDetails | null>(null);
   const [executives, setExecutives] = useState<Executive[]>([]);
+  const [periodTarget, setPeriodTarget] = useState<MetricTarget | null>(null);
 
   useEffect(() => {
-    if (params.id) {
-      const data = getMetricById(params.id as string);
-      setMetric(data);
-      setExecutives(getExecutives());
-    }
+    const loadData = async () => {
+      if (params.id) {
+        try {
+          const [metricData, execData] = await Promise.all([
+            getMetricById(params.id as string),
+            getExecutives(),
+          ]);
+          setMetric(metricData);
+          setExecutives(execData);
+
+          // Load the current period's target if available
+          if (metricData) {
+            const target = await getCurrentPeriodTarget(
+              metricData.id,
+              metricData.cadence as 'weekly' | 'monthly' | 'quarterly' | 'annual'
+            );
+            setPeriodTarget(target);
+          }
+        } catch (error) {
+          console.error('Failed to load metric:', error);
+        }
+      }
+    };
+    loadData();
   }, [params.id]);
 
   if (!metric) {
@@ -39,6 +59,11 @@ export default function MetricDetailPage() {
 
   const statusColor = getStatusColor(metric.status);
   const statusBgColor = getStatusBgColor(metric.status);
+
+  // Use period-specific target if available, otherwise fall back to metric's default target
+  const displayTargetValue = periodTarget?.targetValue ?? metric.targetValue;
+  const displayPercentage = Math.round((metric.currentValue / displayTargetValue) * 100);
+  const periodLabel = periodTarget ? getPeriodLabel(periodTarget) : null;
 
   // Calculate trend percentage
   const trendValue = metric.previousValue
@@ -91,7 +116,14 @@ export default function MetricDetailPage() {
               >
                 <div className="flex items-end justify-between">
                   <div>
-                    <p className="text-sm text-[var(--gray-500)] mb-1">Current Value</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm text-[var(--gray-500)]">Current Value</p>
+                      {periodLabel && (
+                        <span className="px-2 py-0.5 text-xs bg-[var(--primary)]/10 text-[var(--primary)] rounded-full">
+                          {periodLabel} Target
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-baseline gap-2">
                       <span
                         className="text-4xl font-bold"
@@ -100,7 +132,7 @@ export default function MetricDetailPage() {
                         {formatMetricValue(metric.currentValue, metric.format)}
                       </span>
                       <span className="text-lg text-[var(--gray-500)]">
-                        / {formatMetricValue(metric.targetValue, metric.format)}
+                        / {formatMetricValue(displayTargetValue, metric.format)}
                       </span>
                     </div>
                   </div>
@@ -117,13 +149,13 @@ export default function MetricDetailPage() {
                     <div
                       className="h-full rounded-full transition-all duration-500"
                       style={{
-                        width: `${Math.min(metric.percentageOfTarget, 100)}%`,
+                        width: `${Math.min(displayPercentage, 100)}%`,
                         backgroundColor: statusColor,
                       }}
                     />
                   </div>
                   <p className="text-sm text-[var(--gray-600)] mt-2">
-                    {metric.percentageOfTarget}% of target achieved
+                    {displayPercentage}% of {periodLabel ? `${periodLabel.toLowerCase()} ` : ''}target achieved
                   </p>
                 </div>
               </div>
@@ -165,10 +197,15 @@ export default function MetricDetailPage() {
             <div className="lg:w-[400px]">
               <h3 className="text-sm font-semibold text-[var(--gray-700)] mb-3">
                 12-Week Trend
+                {periodLabel && (
+                  <span className="text-xs font-normal text-[var(--gray-500)] ml-2">
+                    ({periodLabel} target shown)
+                  </span>
+                )}
               </h3>
               <TrendChart
                 history={metric.history}
-                targetValue={metric.targetValue}
+                targetValue={displayTargetValue}
                 format={metric.format}
                 height={200}
               />

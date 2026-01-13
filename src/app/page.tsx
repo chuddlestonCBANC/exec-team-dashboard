@@ -9,7 +9,14 @@ import { TalkingItems } from '@/components/dashboard/TalkingItems';
 import { MetricsToReview } from '@/components/dashboard/MetricsToReview';
 import { MeetingNotes } from '@/components/dashboard/MeetingNotes';
 import { generatePDFReport } from '@/components/dashboard/PDFReport';
-import { getDashboardDataExtended, getDashboardDataForWeek } from '@/lib/data/mockData';
+import {
+  getDashboardDataExtended,
+  getDashboardDataForWeek,
+  createTalkingItem,
+  updateTalkingItem,
+  deleteTalkingItem,
+  createOrUpdateMetricReview,
+} from '@/lib/supabase/queries';
 import { getCurrentWeekOf } from '@/lib/utils/formatting';
 import { DashboardDataExtended, DashboardTab, TalkingItem, MetricReviewItem, MeetingNotes as MeetingNotesType } from '@/types';
 import { LayoutDashboard, MessageSquare, AlertTriangle, FileText } from 'lucide-react';
@@ -30,61 +37,123 @@ export default function DashboardPage() {
   const isPastWeek = selectedWeek < currentWeek;
 
   useEffect(() => {
+    let isMounted = true;
+
     // Load data based on selected week
-    const dashboardData = isPastWeek
-      ? getDashboardDataForWeek(selectedWeek)
-      : getDashboardDataExtended();
-    setData(dashboardData);
-    setTalkingItems(dashboardData.talkingItems);
-    setMetricsToReview(dashboardData.metricsToReview);
-    setMeetingNotes(dashboardData.meetingNotes);
+    const loadData = async () => {
+      try {
+        const dashboardData = isPastWeek
+          ? await getDashboardDataForWeek(selectedWeek)
+          : await getDashboardDataExtended();
+
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setData(dashboardData);
+          setTalkingItems(dashboardData.talkingItems);
+          setMetricsToReview(dashboardData.metricsToReview);
+          setMeetingNotes(dashboardData.meetingNotes);
+        }
+      } catch (error: unknown) {
+        // Ignore abort errors (caused by component unmount or StrictMode)
+        const isAbortError =
+          (error instanceof Error && error.name === 'AbortError') ||
+          (typeof error === 'object' && error !== null && 'message' in error &&
+            typeof (error as { message: string }).message === 'string' &&
+            (error as { message: string }).message.includes('AbortError'));
+
+        if (isAbortError) {
+          return;
+        }
+        if (isMounted) {
+          console.error('Failed to load dashboard data:', error);
+        }
+      }
+    };
+
+    loadData();
 
     // If switching to current week and viewing meeting notes, switch to overview
     if (!isPastWeek && activeTab === 'meeting-notes') {
       setActiveTab('overview');
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedWeek, isPastWeek, activeTab]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const dashboardData = getDashboardDataExtended();
-    setData(dashboardData);
-    // Don't reset talking items and metrics to review on refresh (preserve user changes)
-    setIsRefreshing(false);
+    try {
+      const dashboardData = await getDashboardDataExtended();
+      setData(dashboardData);
+      // Don't reset talking items and metrics to review on refresh (preserve user changes)
+    } catch (error) {
+      console.error('Failed to refresh data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Talking Items handlers
-  const handleAddTalkingItem = (item: Omit<TalkingItem, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newItem: TalkingItem = {
-      ...item,
-      id: `talk-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setTalkingItems((prev) => [newItem, ...prev]);
+  const handleAddTalkingItem = async (item: Omit<TalkingItem, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const newItem = await createTalkingItem(item);
+      setTalkingItems((prev) => [newItem, ...prev]);
+    } catch (error) {
+      console.error('Failed to add talking item:', error);
+      // Fallback to local state if Supabase fails
+      const localItem: TalkingItem = {
+        ...item,
+        id: `talk-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setTalkingItems((prev) => [localItem, ...prev]);
+    }
   };
 
-  const handleUpdateTalkingItem = (id: string, updates: Partial<TalkingItem>) => {
+  const handleUpdateTalkingItem = async (id: string, updates: Partial<TalkingItem>) => {
+    // Optimistically update local state
     setTalkingItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, ...updates, updatedAt: new Date().toISOString() } : item
       )
     );
+    try {
+      await updateTalkingItem(id, updates);
+    } catch (error) {
+      console.error('Failed to update talking item:', error);
+    }
   };
 
-  const handleDeleteTalkingItem = (id: string) => {
+  const handleDeleteTalkingItem = async (id: string) => {
+    // Optimistically update local state
     setTalkingItems((prev) => prev.filter((item) => item.id !== id));
+    try {
+      await deleteTalkingItem(id);
+    } catch (error) {
+      console.error('Failed to delete talking item:', error);
+    }
   };
 
   // Metrics to Review handlers
-  const handleUpdateMetricReview = (id: string, updates: Partial<MetricReviewItem>) => {
+  const handleUpdateMetricReview = async (id: string, updates: Partial<MetricReviewItem>) => {
+    // Optimistically update local state
     setMetricsToReview((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, ...updates, updatedAt: new Date().toISOString() } : item
       )
     );
+    // Find the item to get the metricId
+    const item = metricsToReview.find((m) => m.id === id);
+    if (item) {
+      try {
+        await createOrUpdateMetricReview(item.metricId, selectedWeek, updates);
+      } catch (error) {
+        console.error('Failed to update metric review:', error);
+      }
+    }
   };
 
   const handleAddCommitment = (

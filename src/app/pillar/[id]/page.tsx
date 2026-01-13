@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getPillarById } from '@/lib/data/mockData';
+import { getPillarById } from '@/lib/supabase/queries';
 import { PillarWithScore, MetricWithDetails } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { MetricCard } from '@/components/metrics/MetricCard';
@@ -16,10 +16,17 @@ export default function PillarDetailPage() {
   const [pillar, setPillar] = useState<PillarWithScore | null>(null);
 
   useEffect(() => {
-    if (params.id) {
-      const data = getPillarById(params.id as string);
-      setPillar(data);
-    }
+    const loadPillar = async () => {
+      if (params.id) {
+        try {
+          const data = await getPillarById(params.id as string);
+          setPillar(data);
+        } catch (error) {
+          console.error('Failed to load pillar:', error);
+        }
+      }
+    };
+    loadPillar();
   }, [params.id]);
 
   if (!pillar) {

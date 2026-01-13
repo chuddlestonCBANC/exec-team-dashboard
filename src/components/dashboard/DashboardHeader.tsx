@@ -1,10 +1,13 @@
 'use client';
 
-import { RefreshCw, Settings, User, Download } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { RefreshCw, Settings, User, Download, LogOut, ChevronDown } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { WeekSelector } from '@/components/ui/WeekSelector';
 import { formatRelativeTime } from '@/lib/utils/formatting';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 interface DashboardHeaderProps {
   selectedWeek: string;
@@ -25,6 +28,27 @@ export function DashboardHeader({
   onExportPDF,
   isExporting,
 }: DashboardHeaderProps) {
+  const { user, signOut } = useAuth();
+  const router = useRouter();
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/login');
+  };
+
   return (
     <header className="bg-white border-b border-[var(--gray-200)] sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -89,12 +113,48 @@ export function DashboardHeader({
               >
                 <Settings size={18} className="text-[var(--gray-500)]" />
               </Link>
-              <button
-                className="p-2 rounded-lg hover:bg-[var(--gray-50)] transition-colors"
-                aria-label="User menu"
-              >
-                <User size={18} className="text-[var(--gray-500)]" />
-              </button>
+              {/* User Menu */}
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-[var(--gray-50)] transition-colors"
+                  aria-label="User menu"
+                >
+                  {user?.user_metadata?.avatar_url ? (
+                    <Image
+                      src={user.user_metadata.avatar_url}
+                      alt={user.user_metadata.full_name || 'User'}
+                      width={24}
+                      height={24}
+                      className="rounded-full"
+                    />
+                  ) : (
+                    <User size={18} className="text-[var(--gray-500)]" />
+                  )}
+                  <ChevronDown size={14} className="text-[var(--gray-400)]" />
+                </button>
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg border border-[var(--gray-200)] shadow-lg py-2 z-50">
+                    {user && (
+                      <div className="px-4 py-3 border-b border-[var(--gray-100)]">
+                        <p className="text-sm font-medium text-[var(--gray-800)]">
+                          {user.user_metadata?.full_name || 'User'}
+                        </p>
+                        <p className="text-xs text-[var(--gray-500)] truncate">
+                          {user.email}
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm text-[var(--gray-700)] hover:bg-[var(--gray-50)] transition-colors"
+                    >
+                      <LogOut size={16} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
