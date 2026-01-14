@@ -93,7 +93,7 @@ export function ExecutiveCard({ executive, isExpanded: initialExpanded = false, 
               alt={executive.name}
               width={64}
               height={64}
-              className="rounded-full object-cover"
+              className="w-16 h-16 rounded-full object-cover"
             />
             {metricsNeedingAttention.length > 0 && (
               <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--warning)] rounded-full flex items-center justify-center">

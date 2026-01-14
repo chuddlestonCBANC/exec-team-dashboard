@@ -28,6 +28,7 @@ import {
 } from '@/lib/supabase/queries';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { DashboardData, Executive, Metric } from '@/types';
+import { HubSpotFilterBuilder } from '@/components/integrations/HubSpotFilterBuilder';
 import {
   ArrowLeft,
   Settings,
@@ -47,7 +48,25 @@ import {
   Mail,
   UserPlus,
   AlertCircle,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 type AdminTab = 'pillars' | 'metrics' | 'executives' | 'users' | 'integrations';
 
@@ -377,6 +396,10 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
     criticalThreshold: 50,
     parentMetricId: '',
     ownerIds: [] as string[],
+    integrationQuery: '',
+    aggregationMethod: 'sum',
+    integrationValueField: '',
+    integrationTransformRules: '',
   };
 
   const [formData, setFormData] = useState(defaultFormData);
@@ -426,7 +449,35 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
     setIsCreating(true);
   };
 
-  const startEdit = (metric: any) => {
+  const startEdit = async (metric: any) => {
+    // Load integration mapping if exists
+    let integrationData = {
+      integrationQuery: '',
+      aggregationMethod: 'sum',
+      integrationValueField: '',
+      integrationTransformRules: '',
+    };
+
+    if (metric.dataSource === 'jira' || metric.dataSource === 'hubspot') {
+      try {
+        const response = await fetch(`/api/integrations/${metric.dataSource}/mappings?metricId=${metric.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.mappings && data.mappings.length > 0) {
+            const mapping = data.mappings[0];
+            integrationData = {
+              integrationQuery: mapping.query || '',
+              aggregationMethod: mapping.aggregation_method || 'sum',
+              integrationValueField: mapping.value_field || '',
+              integrationTransformRules: mapping.transformation_rules ? JSON.stringify(mapping.transformation_rules, null, 2) : '',
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load integration mapping:', error);
+      }
+    }
+
     setFormData({
       name: metric.name,
       description: metric.description || '',
@@ -442,6 +493,7 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
       criticalThreshold: metric.criticalThreshold || 50,
       parentMetricId: metric.parentMetricId || '',
       ownerIds: metric.owners?.map((o: any) => o.id) || [],
+      ...integrationData,
     });
     initializeTargetValues(metric);
     setEditingId(metric.id);
@@ -501,6 +553,11 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
       // Save period targets
       await savePeriodTargets(newMetric.id, formData.cadence);
 
+      // Save integration mapping if data source is jira or hubspot
+      if (formData.dataSource === 'jira' || formData.dataSource === 'hubspot') {
+        await saveIntegrationMapping(newMetric.id, formData.dataSource);
+      }
+
       resetForm();
       onRefresh();
     } catch (error) {
@@ -545,6 +602,11 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
       // Save period targets
       await savePeriodTargets(id, formData.cadence);
 
+      // Save integration mapping if data source is jira or hubspot
+      if (formData.dataSource === 'jira' || formData.dataSource === 'hubspot') {
+        await saveIntegrationMapping(id, formData.dataSource);
+      }
+
       resetForm();
       onRefresh();
     } catch (error) {
@@ -552,6 +614,53 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
       alert('Failed to update metric');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveIntegrationMapping = async (metricId: string, integrationType: string) => {
+    try {
+      // First, get the integration ID for this type
+      const integrationResponse = await fetch(`/api/integrations/${integrationType}`);
+      const integrationData = await integrationResponse.json();
+
+      if (!integrationData.integration) {
+        alert(`Please configure ${integrationType} integration first in the Integrations tab`);
+        throw new Error('Integration not configured');
+      }
+
+      const payload = {
+        integration_id: integrationData.integration.id,
+        metric_id: metricId,
+        query: formData.integrationQuery,
+        aggregation_method: formData.aggregationMethod,
+        value_field: formData.integrationValueField || null,
+        transformation_rules: formData.integrationTransformRules ? JSON.parse(formData.integrationTransformRules) : null,
+      };
+
+      // Check if mapping already exists
+      const existingResponse = await fetch(`/api/integrations/${integrationType}/mappings?metricId=${metricId}`);
+      if (existingResponse.ok) {
+        const existingData = await existingResponse.json();
+        if (existingData.mappings && existingData.mappings.length > 0) {
+          // Update existing mapping
+          const mappingId = existingData.mappings[0].id;
+          await fetch(`/api/integrations/${integrationType}/mappings/${mappingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        } else {
+          // Create new mapping
+          await fetch(`/api/integrations/${integrationType}/mappings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to save integration mapping:', error);
+      throw error;
     }
   };
 
@@ -694,6 +803,99 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
                 placeholder="Brief description of what this metric measures"
               />
             </div>
+
+            {/* Data Source */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">Data Source</label>
+              <select
+                value={formData.dataSource}
+                onChange={(e) => setFormData({ ...formData, dataSource: e.target.value })}
+                className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)]"
+              >
+                <option value="manual">Manual Entry</option>
+                <option value="jira">Jira</option>
+                <option value="hubspot">HubSpot</option>
+              </select>
+            </div>
+
+            {/* Integration Query Fields */}
+            {(formData.dataSource === 'jira' || formData.dataSource === 'hubspot') && (
+              <>
+                {/* Jira JQL Query */}
+                {formData.dataSource === 'jira' && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">
+                      JQL Query *
+                    </label>
+                    <textarea
+                      value={formData.integrationQuery || ''}
+                      onChange={(e) => setFormData({ ...formData, integrationQuery: e.target.value })}
+                      placeholder="project = PROJ AND sprint in closedSprints() AND status = Done"
+                      rows={3}
+                      className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)] font-mono text-sm"
+                    />
+                    <div className="text-xs text-[var(--gray-500)] mt-1">
+                      Example: project = MYPROJ AND sprint in closedSprints() ORDER BY sprint DESC
+                    </div>
+                  </div>
+                )}
+
+                {/* HubSpot Filter Builder */}
+                {formData.dataSource === 'hubspot' && (
+                  <div className="md:col-span-2">
+                    <HubSpotFilterBuilder
+                      value={formData.integrationQuery || ''}
+                      onChange={(query) => setFormData({ ...formData, integrationQuery: query })}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">Aggregation Method *</label>
+                  <select
+                    value={formData.aggregationMethod || 'sum'}
+                    onChange={(e) => setFormData({ ...formData, aggregationMethod: e.target.value })}
+                    className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)]"
+                  >
+                    <option value="sum">Sum</option>
+                    <option value="count">Count</option>
+                    <option value="average">Average</option>
+                    <option value="max">Maximum</option>
+                    <option value="min">Minimum</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">Value Field</label>
+                  <input
+                    type="text"
+                    value={formData.integrationValueField || ''}
+                    onChange={(e) => setFormData({ ...formData, integrationValueField: e.target.value })}
+                    placeholder={formData.dataSource === 'jira' ? 'storyPoints' : 'amount'}
+                    className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)]"
+                  />
+                  <div className="text-xs text-[var(--gray-500)] mt-1">
+                    Leave empty for count aggregation
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">
+                    Transformation Rules (JSON, optional)
+                  </label>
+                  <textarea
+                    value={formData.integrationTransformRules || ''}
+                    onChange={(e) => setFormData({ ...formData, integrationTransformRules: e.target.value })}
+                    placeholder='{"divide": 1000}'
+                    rows={2}
+                    className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)] font-mono text-sm"
+                  />
+                  <div className="text-xs text-[var(--gray-500)] mt-1">
+                    e.g., {`{"divide": 1000}`} to convert to thousands
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Format & Display */}
             <div>
@@ -1014,6 +1216,71 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
   );
 }
 
+// ============ SORTABLE EXECUTIVE ITEM ============
+
+function SortableExecutiveItem({ exec, onEdit, onDelete }: {
+  exec: Executive;
+  onEdit: (exec: Executive) => void;
+  onDelete: (id: string) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: exec.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 p-4 bg-[var(--gray-50)] rounded-lg"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 text-[var(--gray-400)] hover:text-[var(--gray-600)]"
+      >
+        <GripVertical size={20} />
+      </button>
+      <Image
+        src={exec.headshotUrl}
+        alt={exec.name}
+        width={48}
+        height={48}
+        className="w-12 h-12 rounded-full object-cover"
+      />
+      <div className="flex-1">
+        <h3 className="font-medium text-[var(--gray-800)]">{exec.name}</h3>
+        <p className="text-sm text-[var(--gray-500)]">{exec.title}</p>
+        <p className="text-xs text-[var(--gray-400)]">{exec.email}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onEdit(exec)}
+          className="p-2 text-[var(--gray-500)] hover:text-[var(--primary)] hover:bg-white rounded-lg transition-colors"
+        >
+          <Edit2 size={16} />
+        </button>
+        <button
+          onClick={() => onDelete(exec.id)}
+          className="p-2 text-[var(--gray-500)] hover:text-[var(--danger)] hover:bg-white rounded-lg transition-colors"
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ============ EXECUTIVES CONFIG ============
 
 function ExecutivesConfig({ executives, onRefresh }: { executives: Executive[]; onRefresh: () => void }) {
@@ -1025,34 +1292,177 @@ function ExecutivesConfig({ executives, onRefresh }: { executives: Executive[]; 
     title: '',
     email: '',
     headshotUrl: '',
+    authUserId: '',
   });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [uploading, setUploading] = useState(false);
+  const [approvedUsers, setApprovedUsers] = useState<any[]>([]);
+  const [sortedExecutives, setSortedExecutives] = useState<Executive[]>(executives);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  useEffect(() => {
+    setSortedExecutives([...executives].sort((a, b) => a.sortOrder - b.sortOrder));
+  }, [executives]);
+
+  useEffect(() => {
+    loadApprovedUsers();
+  }, []);
+
+  const loadApprovedUsers = async () => {
+    try {
+      const res = await fetch('/api/users/approved');
+      if (res.ok) {
+        const data = await res.json();
+        setApprovedUsers(data.users || []);
+      }
+    } catch (error) {
+      console.error('Failed to load approved users:', error);
+    }
+  };
 
   const resetForm = () => {
-    setFormData({ name: '', title: '', email: '', headshotUrl: '' });
+    setFormData({ name: '', title: '', email: '', headshotUrl: '', authUserId: '' });
+    setSelectedFile(null);
+    setPreviewUrl('');
     setIsCreating(false);
     setEditingId(null);
   };
 
   const startEdit = (exec: Executive) => {
+    // Find the approved_user linked to this executive
+    const linkedUser = approvedUsers.find(u => u.executive_id === exec.id);
+
     setFormData({
       name: exec.name,
       title: exec.title,
       email: exec.email || '',
       headshotUrl: exec.headshotUrl,
+      authUserId: linkedUser?.id || '',
     });
+    setPreviewUrl(exec.headshotUrl); // Show current headshot as preview
     setEditingId(exec.id);
     setIsCreating(false);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = sortedExecutives.findIndex((e) => e.id === active.id);
+      const newIndex = sortedExecutives.findIndex((e) => e.id === over.id);
+
+      const newOrder = arrayMove(sortedExecutives, oldIndex, newIndex);
+      setSortedExecutives(newOrder);
+
+      // Update sort_order in database
+      try {
+        const updates = newOrder.map((exec, index) => ({
+          id: exec.id,
+          sort_order: index,
+        }));
+
+        await fetch('/api/executives/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ executives: updates }),
+        });
+
+        onRefresh();
+      } catch (error) {
+        console.error('Failed to update executive order:', error);
+      }
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const uploadHeadshot = async (): Promise<string | null> => {
+    if (!selectedFile) return null;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const res = await fetch('/api/upload/executive-headshot', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Upload failed');
+      }
+
+      const data = await res.json();
+      return data.url;
+    } catch (error) {
+      console.error('Failed to upload headshot:', error);
+      alert('Failed to upload headshot image');
+      return null;
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleCreate = async () => {
     setSaving(true);
     try {
-      await createExecutive({
+      // Upload headshot if a file was selected
+      let headshotUrl = formData.headshotUrl;
+      if (selectedFile) {
+        const uploadedUrl = await uploadHeadshot();
+        if (!uploadedUrl) {
+          setSaving(false);
+          return;
+        }
+        headshotUrl = uploadedUrl;
+      }
+
+      // Look up auth_user_id from selected approved user
+      let authUserId = null;
+      if (formData.authUserId) {
+        const selectedUser = approvedUsers.find(u => u.id === formData.authUserId);
+        authUserId = selectedUser?.auth_user_id || null;
+      }
+
+      const newExec = await createExecutive({
         name: formData.name,
         title: formData.title,
         email: formData.email,
-        headshotUrl: formData.headshotUrl || 'https://via.placeholder.com/100',
+        headshotUrl: headshotUrl || 'https://via.placeholder.com/100',
+        authUserId: authUserId,
       });
+
+      // Also update the approved_users.executive_id link
+      if (formData.authUserId) {
+        const updateRes = await fetch(`/api/users/${formData.authUserId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ executive_id: newExec.id }),
+        });
+        if (!updateRes.ok) {
+          console.warn('Failed to link approved_user to executive');
+        }
+      }
       resetForm();
       onRefresh();
     } catch (error) {
@@ -1066,12 +1476,44 @@ function ExecutivesConfig({ executives, onRefresh }: { executives: Executive[]; 
   const handleUpdate = async (id: string) => {
     setSaving(true);
     try {
+      // Upload new headshot if a file was selected
+      let headshotUrl = formData.headshotUrl;
+      if (selectedFile) {
+        const uploadedUrl = await uploadHeadshot();
+        if (!uploadedUrl) {
+          setSaving(false);
+          return;
+        }
+        headshotUrl = uploadedUrl;
+      }
+
+      // Look up auth_user_id from selected approved user
+      let authUserId = null;
+      if (formData.authUserId) {
+        const selectedUser = approvedUsers.find(u => u.id === formData.authUserId);
+        authUserId = selectedUser?.auth_user_id || null;
+      }
+
       await updateExecutive(id, {
         name: formData.name,
         title: formData.title,
         email: formData.email,
-        headshotUrl: formData.headshotUrl,
+        headshotUrl: headshotUrl,
+        authUserId: authUserId,
       });
+
+      // Also update the approved_users.executive_id link
+      if (formData.authUserId) {
+        const updateRes = await fetch(`/api/users/${formData.authUserId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ executive_id: id }),
+        });
+        if (!updateRes.ok) {
+          console.warn('Failed to link approved_user to executive');
+        }
+      }
+
       resetForm();
       onRefresh();
     } catch (error) {
@@ -1146,14 +1588,51 @@ function ExecutivesConfig({ executives, onRefresh }: { executives: Executive[]; 
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">Headshot URL</label>
-              <input
-                type="url"
-                value={formData.headshotUrl}
-                onChange={(e) => setFormData({ ...formData, headshotUrl: e.target.value })}
-                className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)]"
-                placeholder="https://..."
-              />
+              <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">Linked User Account</label>
+              <select
+                value={formData.authUserId}
+                onChange={(e) => setFormData({ ...formData, authUserId: e.target.value })}
+                className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)] bg-white"
+              >
+                <option value="">None</option>
+                {approvedUsers
+                  .filter(u => !u.executive_id || u.executive_id === editingId)
+                  .map(user => (
+                    <option key={user.id} value={user.id}>
+                      {user.email} ({user.role}){!user.auth_user_id && ' - not logged in yet'}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-[var(--gray-500)] mt-1">
+                Link this executive to a user account. Users who haven't logged in yet can still be linked.
+              </p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">Headshot Image</label>
+              <div className="flex items-start gap-4">
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={handleFileSelect}
+                    className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)] file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[var(--primary)] file:text-white hover:file:bg-[var(--primary-dark)] file:cursor-pointer"
+                  />
+                  <p className="text-xs text-[var(--gray-500)] mt-1">
+                    Max 5MB. Supported formats: JPEG, PNG, WebP, GIF
+                  </p>
+                </div>
+                {previewUrl && (
+                  <div className="flex-shrink-0">
+                    <Image
+                      src={previewUrl}
+                      alt="Preview"
+                      width={64}
+                      height={64}
+                      className="w-16 h-16 rounded-full object-cover border-2 border-[var(--gray-200)]"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
@@ -1165,53 +1644,37 @@ function ExecutivesConfig({ executives, onRefresh }: { executives: Executive[]; 
             </button>
             <button
               onClick={() => isCreating ? handleCreate() : handleUpdate(editingId!)}
-              disabled={saving || !formData.name || !formData.title || !formData.email}
+              disabled={saving || uploading || !formData.name || !formData.title || !formData.email}
               className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors disabled:opacity-50"
             >
               <Save size={16} />
-              {saving ? 'Saving...' : 'Save'}
+              {uploading ? 'Uploading...' : saving ? 'Saving...' : 'Save'}
             </button>
           </div>
         </div>
       )}
 
-      <div className="space-y-4">
-        {executives.map((exec) => (
-          <div
-            key={exec.id}
-            className="flex items-center justify-between p-4 bg-[var(--gray-50)] rounded-lg"
-          >
-            <div className="flex items-center gap-4">
-              <Image
-                src={exec.headshotUrl}
-                alt={exec.name}
-                width={48}
-                height={48}
-                className="rounded-full"
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext
+          items={sortedExecutives.map((e) => e.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="space-y-3">
+            {sortedExecutives.map((exec) => (
+              <SortableExecutiveItem
+                key={exec.id}
+                exec={exec}
+                onEdit={startEdit}
+                onDelete={handleDelete}
               />
-              <div>
-                <h3 className="font-medium text-[var(--gray-800)]">{exec.name}</h3>
-                <p className="text-sm text-[var(--gray-500)]">{exec.title}</p>
-                <p className="text-xs text-[var(--gray-400)]">{exec.email}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => startEdit(exec)}
-                className="p-2 text-[var(--gray-500)] hover:text-[var(--primary)] hover:bg-white rounded-lg transition-colors"
-              >
-                <Edit2 size={16} />
-              </button>
-              <button
-                onClick={() => handleDelete(exec.id)}
-                className="p-2 text-[var(--gray-500)] hover:text-[var(--danger)] hover:bg-white rounded-lg transition-colors"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }
@@ -1500,29 +1963,166 @@ function UsersConfig({ users, executives, onRefresh }: { users: ApprovedUser[]; 
 // ============ INTEGRATIONS CONFIG ============
 
 function IntegrationsConfig() {
-  const integrations = [
+  const [integrations, setIntegrations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [configuring, setConfiguring] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [formData, setFormData] = useState<any>({});
+
+  const integrationDefs = [
     {
       id: 'hubspot',
       name: 'HubSpot',
       description: 'CRM and sales pipeline data',
-      status: 'disconnected',
       icon: '🔶',
+      fields: [
+        { name: 'accessToken', label: 'Access Token (Private App)', type: 'password', placeholder: 'pat-na1-xxxxxxxx-xxxx-xxxx...' },
+        { name: 'apiKey', label: 'OR API Key (Legacy)', type: 'password', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx...' },
+        { name: 'refreshToken', label: 'Refresh Token (OAuth, optional)', type: 'password', placeholder: 'Only for OAuth apps' },
+        { name: 'clientSecret', label: 'Client Secret (OAuth, optional)', type: 'password', placeholder: 'Only for OAuth apps' },
+        { name: 'portalId', label: 'Portal ID (optional)', type: 'text', placeholder: 'Your HubSpot portal ID' },
+      ],
     },
     {
       id: 'jira',
       name: 'Jira',
       description: 'Engineering velocity and issue tracking',
-      status: 'disconnected',
       icon: '🔷',
+      fields: [
+        { name: 'host', label: 'Jira Host', type: 'text', placeholder: 'yourcompany.atlassian.net' },
+        { name: 'email', label: 'Email', type: 'email', placeholder: 'your-email@company.com' },
+        { name: 'apiToken', label: 'API Token', type: 'password', placeholder: 'Enter your Jira API token' },
+      ],
     },
     {
       id: 'sheets',
       name: 'Google Sheets',
       description: 'Manual data entry and imports',
-      status: 'disconnected',
       icon: '📊',
+      comingSoon: true,
     },
   ];
+
+  useEffect(() => {
+    loadIntegrations();
+  }, []);
+
+  const loadIntegrations = async () => {
+    setLoading(true);
+    try {
+      const statuses = await Promise.all(
+        integrationDefs.map(async (def) => {
+          if (def.comingSoon) {
+            return { ...def, status: 'coming_soon', config: null };
+          }
+          try {
+            const response = await fetch(`/api/integrations/${def.id}`);
+            const data = await response.json();
+            return {
+              ...def,
+              status: data.integration?.is_active ? 'connected' : 'disconnected',
+              config: data.integration,
+            };
+          } catch {
+            return { ...def, status: 'disconnected', config: null };
+          }
+        })
+      );
+      setIntegrations(statuses);
+    } catch (error) {
+      console.error('Failed to load integrations:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfigure = (integrationId: string) => {
+    setConfiguring(integrationId);
+    setFormData({});
+  };
+
+  const handleSaveConfig = async (integrationId: string) => {
+    try {
+      const integration = integrationDefs.find((i) => i.id === integrationId);
+      if (!integration) return;
+
+      const response = await fetch(`/api/integrations/${integrationId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: integration.name,
+          config: formData,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`Failed to save configuration: ${data.error}`);
+        return;
+      }
+
+      alert(`${integration.name} connected successfully!`);
+      setConfiguring(null);
+      setFormData({});
+      loadIntegrations();
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    }
+  };
+
+  const handleDisconnect = async (integrationId: string) => {
+    if (!confirm('Are you sure you want to disconnect this integration?')) return;
+
+    try {
+      const response = await fetch(`/api/integrations/${integrationId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        alert('Failed to disconnect integration');
+        return;
+      }
+
+      alert('Integration disconnected successfully');
+      loadIntegrations();
+    } catch (error) {
+      alert('Error disconnecting integration');
+    }
+  };
+
+  const handleSync = async (integrationId: string) => {
+    setSyncing(integrationId);
+    try {
+      const response = await fetch(`/api/integrations/${integrationId}/sync`, {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`Sync failed: ${data.error}`);
+        return;
+      }
+
+      alert(`Sync completed! Fetched ${data.recordsFetched} records, updated ${data.recordsUpdated} metrics.`);
+      loadIntegrations();
+    } catch (error: any) {
+      alert(`Sync error: ${error.message}`);
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-[var(--gray-200)] p-6">
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-[var(--primary)] border-t-transparent" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl border border-[var(--gray-200)] p-6">
@@ -1530,30 +2130,102 @@ function IntegrationsConfig() {
 
       <div className="space-y-4">
         {integrations.map((integration) => (
-          <div
-            key={integration.id}
-            className="flex items-center justify-between p-4 bg-[var(--gray-50)] rounded-lg"
-          >
-            <div className="flex items-center gap-4">
-              <span className="text-3xl">{integration.icon}</span>
-              <div>
-                <h3 className="font-medium text-[var(--gray-800)]">{integration.name}</h3>
-                <p className="text-sm text-[var(--gray-500)]">{integration.description}</p>
+          <div key={integration.id} className="bg-[var(--gray-50)] rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-4">
+                <span className="text-3xl">{integration.icon}</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-medium text-[var(--gray-800)]">{integration.name}</h3>
+                    {integration.status === 'connected' && (
+                      <span className="px-2 py-0.5 text-xs bg-[var(--success-bg)] text-[var(--success)] rounded">
+                        Connected
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-[var(--gray-500)]">{integration.description}</p>
+                  {integration.config?.last_sync_at && (
+                    <p className="text-xs text-[var(--gray-400)] mt-1">
+                      Last synced: {new Date(integration.config.last_sync_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {integration.comingSoon ? (
+                  <span className="px-3 py-1 text-sm bg-[var(--gray-100)] text-[var(--gray-500)] rounded-full">
+                    Coming Soon
+                  </span>
+                ) : integration.status === 'connected' ? (
+                  <>
+                    <button
+                      onClick={() => handleSync(integration.id)}
+                      disabled={syncing === integration.id}
+                      className="px-3 py-1.5 text-sm text-[var(--primary)] hover:bg-white rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {syncing === integration.id ? 'Syncing...' : 'Sync Now'}
+                    </button>
+                    <button
+                      onClick={() => handleDisconnect(integration.id)}
+                      className="px-3 py-1.5 text-sm text-[var(--danger)] hover:bg-white rounded-lg transition-colors"
+                    >
+                      Disconnect
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => handleConfigure(integration.id)}
+                    className="px-4 py-2 bg-[var(--primary)] text-white text-sm rounded-lg hover:bg-[var(--primary-dark)] transition-colors"
+                  >
+                    Configure
+                  </button>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="px-3 py-1 text-sm bg-[var(--gray-100)] text-[var(--gray-500)] rounded-full">
-                Coming Soon
-              </span>
-            </div>
+
+            {configuring === integration.id && (
+              <div className="border-t border-[var(--gray-200)] p-4 bg-white">
+                <h4 className="font-medium text-[var(--gray-800)] mb-4">Configure {integration.name}</h4>
+                <div className="space-y-3">
+                  {integration.fields?.map((field: any) => (
+                    <div key={field.name}>
+                      <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">
+                        {field.label}
+                      </label>
+                      <input
+                        type={field.type}
+                        value={formData[field.name] || ''}
+                        onChange={(e) => setFormData({ ...formData, [field.name]: e.target.value })}
+                        placeholder={field.placeholder}
+                        className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)]"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    onClick={() => setConfiguring(null)}
+                    className="px-4 py-2 text-[var(--gray-600)] hover:bg-[var(--gray-50)] rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig(integration.id)}
+                    className="px-4 py-2 bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors"
+                  >
+                    Connect
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      <div className="mt-6 p-4 bg-[var(--warning-bg)] rounded-lg border border-[var(--warning)]">
-        <p className="text-sm text-[var(--warning)]">
-          <strong>Note:</strong> Integration support is planned for a future release. For now, use
-          manual data entry to update metric values.
+      <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <p className="text-sm text-blue-800">
+          <strong>How it works:</strong> Connect your tools to automatically sync data to your metrics.
+          Configure integration queries on individual metrics in the Metrics tab.
         </p>
       </div>
     </div>

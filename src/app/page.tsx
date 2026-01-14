@@ -45,9 +45,81 @@ export default function DashboardPage() {
   useEffect(() => {
     let isMounted = true;
 
+    // Auto-sync integrations if needed
+    const autoSyncIntegrations = async () => {
+      try {
+        console.log('🔄 Checking integrations for auto-sync...');
+        // Check which integrations need syncing
+        const integrationTypes = ['jira', 'hubspot'];
+
+        for (const type of integrationTypes) {
+          try {
+            console.log(`  Checking ${type} integration...`);
+            const response = await fetch(`/api/integrations/${type}`);
+            if (!response.ok) {
+              console.log(`  ❌ ${type}: Not configured or error`);
+              continue;
+            }
+
+            const { integration } = await response.json();
+            if (!integration || !integration.is_active) {
+              console.log(`  ⏸️  ${type}: Not active`);
+              continue;
+            }
+
+            // Check if enough time has passed since last sync
+            const syncFrequencyMinutes = integration.sync_frequency_minutes || 60;
+            const lastSyncAt = integration.last_sync_at ? new Date(integration.last_sync_at) : null;
+            const now = new Date();
+            const minutesSinceLastSync = lastSyncAt ? (now.getTime() - lastSyncAt.getTime()) / 1000 / 60 : null;
+
+            console.log(`  📊 ${type}: Last sync ${lastSyncAt ? minutesSinceLastSync?.toFixed(1) + ' minutes ago' : 'never'}, frequency: ${syncFrequencyMinutes} min`);
+
+            // TEMPORARY: Force sync every time for testing (bypassing time check)
+            const shouldSync = true; // Change to: !lastSyncAt || (now.getTime() - lastSyncAt.getTime()) > syncFrequencyMinutes * 60 * 1000
+
+            if (shouldSync) {
+              console.log(`  🚀 ${type}: Triggering sync now...`);
+              console.log(`%c⚡ SYNC STARTING FOR ${type.toUpperCase()}`, 'background: blue; color: white; padding: 5px; font-size: 14px;');
+
+              // Trigger sync in background (don't await)
+              fetch(`/api/integrations/${type}/sync`, { method: 'POST' })
+                .then(async res => {
+                  const data = await res.json();
+                  if (res.ok) {
+                    console.log(`  ✅ ${type}: Sync completed - fetched: ${data.recordsFetched}, updated: ${data.recordsUpdated}`);
+                    console.log(`%c✅ ${type.toUpperCase()} SYNC SUCCESS`, 'background: green; color: white; padding: 5px; font-size: 14px;');
+                  } else {
+                    console.error(`  ❌ ${type}: Sync failed -`, data.error);
+                    console.log(`%c❌ ${type.toUpperCase()} SYNC FAILED: ${data.error}`, 'background: red; color: white; padding: 5px; font-size: 14px;');
+                  }
+                })
+                .catch(err => {
+                  console.error(`  ❌ ${type}: Background sync failed:`, err);
+                  console.log(`%c❌ ${type.toUpperCase()} SYNC ERROR`, 'background: red; color: white; padding: 5px; font-size: 14px;');
+                });
+            } else {
+              console.log(`  ⏭️  ${type}: Skipping (synced recently)`);
+            }
+          } catch (err) {
+            // Silently ignore errors for individual integrations
+            console.error(`  ⚠️  ${type}: Error checking integration:`, err);
+          }
+        }
+      } catch (error) {
+        // Silently ignore auto-sync errors
+        console.error('⚠️ Auto-sync check failed:', error);
+      }
+    };
+
     // Load data based on selected week
     const loadData = async () => {
       try {
+        // Trigger auto-sync before loading data (runs in background)
+        if (!isPastWeek) {
+          autoSyncIntegrations();
+        }
+
         const dashboardData = isPastWeek
           ? await getDashboardDataForWeek(selectedWeek)
           : await getDashboardDataExtended();

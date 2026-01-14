@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, Settings, User, Download, LogOut, ChevronDown } from 'lucide-react';
+import { RefreshCw, Settings, User, Download, LogOut, ChevronDown, LayoutDashboard, ListChecks } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { WeekSelector } from '@/components/ui/WeekSelector';
 import { formatRelativeTime } from '@/lib/utils/formatting';
 import { useAuth } from '@/components/providers/AuthProvider';
@@ -30,6 +30,7 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   const { user, signOut } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -49,6 +50,11 @@ export function DashboardHeader({
     router.push('/login');
   };
 
+  const isActive = (path: string) => {
+    if (path === '/') return pathname === '/';
+    return pathname?.startsWith(path);
+  };
+
   return (
     <header className="bg-white border-b border-[var(--gray-200)] sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -65,9 +71,32 @@ export function DashboardHeader({
               />
             </Link>
             <div className="hidden sm:block h-6 w-px bg-[var(--gray-200)]" />
-            <h1 className="hidden sm:block text-lg font-semibold text-[var(--gray-800)]">
-              Executive Dashboard
-            </h1>
+
+            {/* Navigation Tabs */}
+            <nav className="hidden md:flex items-center gap-1">
+              <Link
+                href="/"
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive('/') && !isActive('/action-plans')
+                    ? 'bg-[var(--gray-100)] text-[var(--gray-900)]'
+                    : 'text-[var(--gray-600)] hover:text-[var(--gray-900)] hover:bg-[var(--gray-50)]'
+                }`}
+              >
+                <LayoutDashboard size={16} />
+                <span>Dashboard</span>
+              </Link>
+              <Link
+                href="/action-plans"
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive('/action-plans')
+                    ? 'bg-[var(--gray-100)] text-[var(--gray-900)]'
+                    : 'text-[var(--gray-600)] hover:text-[var(--gray-900)] hover:bg-[var(--gray-50)]'
+                }`}
+              >
+                <ListChecks size={16} />
+                <span>Action Plans</span>
+              </Link>
+            </nav>
           </div>
 
           {/* Week Selector */}
@@ -126,10 +155,12 @@ export function DashboardHeader({
                       alt={user.user_metadata.full_name || 'User'}
                       width={24}
                       height={24}
-                      className="rounded-full"
+                      className="w-6 h-6 rounded-full object-cover"
                     />
                   ) : (
-                    <User size={18} className="text-[var(--gray-500)]" />
+                    <div className="w-6 h-6 rounded-full bg-[var(--gray-200)] flex items-center justify-center">
+                      <User size={14} className="text-[var(--gray-500)]" />
+                    </div>
                   )}
                   <ChevronDown size={14} className="text-[var(--gray-400)]" />
                 </button>

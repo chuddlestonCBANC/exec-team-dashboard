@@ -1066,9 +1066,6 @@ export interface MetricTarget {
   year: number;
   periodNumber: number | null;
   targetValue: number;
-  warningThreshold: number;
-  criticalThreshold: number;
-  notes?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1101,9 +1098,6 @@ export async function getMetricTargets(metricId: string, year?: number): Promise
     year: t.year,
     periodNumber: t.period_number,
     targetValue: parseFloat(t.target_value),
-    warningThreshold: parseFloat(t.warning_threshold),
-    criticalThreshold: parseFloat(t.critical_threshold),
-    notes: t.notes,
     createdAt: t.created_at,
     updatedAt: t.updated_at,
   }));
@@ -1137,9 +1131,6 @@ export async function getAllMetricTargetsForYear(year?: number): Promise<Map<str
       year: t.year,
       periodNumber: t.period_number,
       targetValue: parseFloat(t.target_value),
-      warningThreshold: parseFloat(t.warning_threshold),
-      criticalThreshold: parseFloat(t.critical_threshold),
-      notes: t.notes,
       createdAt: t.created_at,
       updatedAt: t.updated_at,
     };
@@ -1173,9 +1164,6 @@ export async function saveMetricTarget(
       year,
       period_number: periodNumber,
       target_value: targetValue,
-      warning_threshold: warningThreshold ?? 70,
-      critical_threshold: criticalThreshold ?? 50,
-      notes,
     }, {
       onConflict: 'metric_id,period,year,period_number',
     })
@@ -1191,9 +1179,6 @@ export async function saveMetricTarget(
     year: data.year,
     periodNumber: data.period_number,
     targetValue: parseFloat(data.target_value),
-    warningThreshold: parseFloat(data.warning_threshold),
-    criticalThreshold: parseFloat(data.critical_threshold),
-    notes: data.notes,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
   };
@@ -1735,6 +1720,7 @@ export interface CreateExecutiveInput {
   email: string;
   headshotUrl?: string;
   sortOrder?: number;
+  authUserId?: string | null; // Link to auth.users
   createUserAccount?: boolean; // Also create an approved_user entry
 }
 
@@ -1750,11 +1736,20 @@ export async function createExecutive(input: CreateExecutiveInput): Promise<Exec
       email: input.email.toLowerCase(),
       headshot_url: input.headshotUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(input.name)}&background=6941C6&color=fff`,
       sort_order: input.sortOrder ?? 0,
+      auth_user_id: input.authUserId || null,
     })
     .select()
     .single();
 
   if (error) throw error;
+
+  // If linking to an existing user, update approved_users to link back to this executive
+  if (input.authUserId) {
+    await supabase
+      .from('approved_users')
+      .update({ executive_id: data.id })
+      .eq('auth_user_id', input.authUserId);
+  }
 
   // Optionally create user account linked to this executive
   if (input.createUserAccount) {
@@ -1781,7 +1776,7 @@ export async function createExecutive(input: CreateExecutiveInput): Promise<Exec
 
 export async function updateExecutive(
   id: string,
-  updates: { name?: string; title?: string; email?: string; headshotUrl?: string; sortOrder?: number }
+  updates: { name?: string; title?: string; email?: string; headshotUrl?: string; sortOrder?: number; authUserId?: string | null }
 ): Promise<void> {
   const supabase = createClient();
   const updateData: any = {};
@@ -1790,6 +1785,7 @@ export async function updateExecutive(
   if (updates.email !== undefined) updateData.email = updates.email.toLowerCase();
   if (updates.headshotUrl !== undefined) updateData.headshot_url = updates.headshotUrl;
   if (updates.sortOrder !== undefined) updateData.sort_order = updates.sortOrder;
+  if (updates.authUserId !== undefined) updateData.auth_user_id = updates.authUserId;
 
   const { error } = await supabase
     .from('executives')
@@ -1797,6 +1793,23 @@ export async function updateExecutive(
     .eq('id', id);
 
   if (error) throw error;
+
+  // Handle bidirectional linking with approved_users
+  if (updates.authUserId !== undefined) {
+    // First, clear any approved_users that currently point to this executive
+    await supabase
+      .from('approved_users')
+      .update({ executive_id: null })
+      .eq('executive_id', id);
+
+    // Then, if linking to a user, update that user's approved_users record
+    if (updates.authUserId) {
+      await supabase
+        .from('approved_users')
+        .update({ executive_id: id })
+        .eq('auth_user_id', updates.authUserId);
+    }
+  }
 }
 
 export async function deleteExecutive(id: string): Promise<void> {
@@ -2014,4 +2027,163 @@ async function generateMetricsToReview(
   }
 
   return reviewItems;
+}
+
+// ==================== Narratives ====================
+
+export async function createNarrative(data: {
+  metricId: string;
+  executiveId: string;
+  content: string;
+}) {
+  const supabase = await createClient();
+  return await supabase
+    .from('narratives')
+    .insert({
+      metric_id: data.metricId,
+      executive_id: data.executiveId,
+      content: data.content,
+    })
+    .select()
+    .single();
+}
+
+export async function updateNarrative(id: string, content: string) {
+  const supabase = await createClient();
+  return await supabase
+    .from('narratives')
+    .update({ content, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
+export async function deleteNarrative(id: string) {
+  const supabase = await createClient();
+  return await supabase.from('narratives').delete().eq('id', id);
+}
+
+// ==================== Commitments ====================
+
+export async function createCommitment(data: {
+  metricId: string;
+  executiveId: string;
+  title: string;
+  description?: string;
+  targetDate?: string;
+}) {
+  const supabase = await createClient();
+  return await supabase
+    .from('commitments')
+    .insert({
+      metric_id: data.metricId,
+      executive_id: data.executiveId,
+      title: data.title,
+      description: data.description,
+      target_date: data.targetDate,
+      status: 'pending',
+    })
+    .select()
+    .single();
+}
+
+export async function updateCommitment(
+  id: string,
+  updates: {
+    title?: string;
+    description?: string;
+    status?: string;
+    targetDate?: string;
+  }
+) {
+  const supabase = await createClient();
+  const updateData: any = { updated_at: new Date().toISOString() };
+
+  if (updates.title !== undefined) updateData.title = updates.title;
+  if (updates.description !== undefined) updateData.description = updates.description;
+  if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.targetDate !== undefined) updateData.target_date = updates.targetDate;
+
+  return await supabase
+    .from('commitments')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+}
+
+export async function deleteCommitment(id: string) {
+  const supabase = await createClient();
+  return await supabase.from('commitments').delete().eq('id', id);
+}
+
+// ==================== Commitment Updates ====================
+
+export async function createCommitmentUpdate(data: {
+  commitmentId: string;
+  executiveId: string;
+  content: string;
+}) {
+  const supabase = await createClient();
+  return await supabase
+    .from('commitment_updates')
+    .insert({
+      commitment_id: data.commitmentId,
+      executive_id: data.executiveId,
+      content: data.content,
+    })
+    .select()
+    .single();
+}
+
+// ==================== Metric Detail ====================
+
+export async function getMetricDetail(metricId: string) {
+  const supabase = await createClient();
+
+  const { data: metric, error } = await supabase
+    .from('metrics')
+    .select(`
+      *,
+      pillar:pillars(*),
+      owners:metric_owners(executive:executives(*)),
+      narratives(*, executive:executives(*)),
+      commitments(
+        *,
+        executive:executives(*),
+        updates:commitment_updates(*, executive:executives(*))
+      ),
+      history:metric_history(*)
+    `)
+    .eq('id', metricId)
+    .single();
+
+  if (error) {
+    console.error('[getMetricDetail] Error fetching metric:', error);
+    return null;
+  }
+
+  // Sort the nested arrays in JavaScript since Supabase ordering on nested relations can be problematic
+  if (metric) {
+    if (metric.narratives) {
+      metric.narratives.sort((a: any, b: any) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+    if (metric.commitments) {
+      metric.commitments.sort((a: any, b: any) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      // Sort updates within each commitment
+      metric.commitments.forEach((commitment: any) => {
+        if (commitment.updates) {
+          commitment.updates.sort((a: any, b: any) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        }
+      });
+    }
+  }
+
+  return metric;
 }
