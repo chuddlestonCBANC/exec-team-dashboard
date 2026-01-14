@@ -7,6 +7,8 @@ import { ArrowLeft, Plus, Trash2, Save, MessageSquare } from 'lucide-react';
 import { getMetricDetail } from '@/lib/supabase/queries';
 import { useAuth } from '@/components/providers/AuthProvider';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
+import { getCurrentWeekOf } from '@/lib/utils/formatting';
 
 export default function MetricDetailPage() {
   const router = useRouter();
@@ -14,6 +16,7 @@ export default function MetricDetailPage() {
   const { user } = useAuth();
   const [metric, setMetric] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekOf());
   const [showNarrativeForm, setShowNarrativeForm] = useState(false);
   const [narrativeContent, setNarrativeContent] = useState('');
   const [showCommitmentForm, setShowCommitmentForm] = useState(false);
@@ -111,12 +114,19 @@ export default function MetricDetailPage() {
   const percentageOfTarget = (metric.current_value / metric.target_value) * 100;
 
   return (
-    <div className="min-h-screen bg-[var(--background)] p-6">
-      <div className="max-w-5xl mx-auto">
-        <Link href="/" className="inline-flex items-center gap-2 text-[var(--gray-600)] hover:text-[var(--gray-900)] mb-6">
-          <ArrowLeft size={20} />
-          Back to Dashboard
-        </Link>
+    <>
+      <DashboardHeader
+        selectedWeek={selectedWeek}
+        onWeekChange={setSelectedWeek}
+        onRefresh={loadMetric}
+        isRefreshing={loading}
+      />
+      <div className="min-h-screen bg-[var(--background)] p-6">
+        <div className="max-w-5xl mx-auto">
+          <Link href="/" className="inline-flex items-center gap-2 text-[var(--gray-600)] hover:text-[var(--gray-900)] mb-6">
+            <ArrowLeft size={20} />
+            Back to Dashboard
+          </Link>
         <div className="bg-white rounded-xl border border-[var(--gray-200)] p-6 mb-6">
           <div className="flex items-start justify-between mb-4">
             <div>
@@ -235,5 +245,6 @@ export default function MetricDetailPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

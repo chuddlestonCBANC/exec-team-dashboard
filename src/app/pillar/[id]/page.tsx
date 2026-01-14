@@ -10,22 +10,30 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { TrendChart } from '@/components/metrics/TrendChart';
 import { getStatusColor, getStatusBgColor } from '@/lib/utils/scoring';
 import { ArrowLeft, TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
+import { getCurrentWeekOf } from '@/lib/utils/formatting';
 
 export default function PillarDetailPage() {
   const params = useParams();
   const [pillar, setPillar] = useState<PillarWithScore | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekOf());
+  const [loading, setLoading] = useState(false);
+
+  const loadPillar = async () => {
+    if (params.id) {
+      setLoading(true);
+      try {
+        const data = await getPillarById(params.id as string);
+        setPillar(data);
+      } catch (error) {
+        console.error('Failed to load pillar:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
-    const loadPillar = async () => {
-      if (params.id) {
-        try {
-          const data = await getPillarById(params.id as string);
-          setPillar(data);
-        } catch (error) {
-          console.error('Failed to load pillar:', error);
-        }
-      }
-    };
     loadPillar();
   }, [params.id]);
 
@@ -50,23 +58,22 @@ export default function PillarDetailPage() {
   const onTrackMetrics = keyResults.filter((m) => m.status === 'green').length;
 
   return (
-    <div className="min-h-screen bg-[var(--gray-100)]">
-      {/* Header */}
-      <header className="bg-white border-b border-[var(--gray-200)] sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center h-16">
-            <Link
-              href="/"
-              className="flex items-center gap-2 text-[var(--gray-600)] hover:text-[var(--primary)] transition-colors mr-6"
-            >
-              <ArrowLeft size={20} />
-              <span className="text-sm font-medium">Back to Dashboard</span>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <>
+      <DashboardHeader
+        selectedWeek={selectedWeek}
+        onWeekChange={setSelectedWeek}
+        onRefresh={loadPillar}
+        isRefreshing={loading}
+      />
+      <div className="min-h-screen bg-[var(--gray-100)]">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-[var(--gray-600)] hover:text-[var(--primary)] transition-colors mb-6"
+          >
+            <ArrowLeft size={20} />
+            <span className="text-sm font-medium">Back to Dashboard</span>
+          </Link>
         {/* Pillar Overview */}
         <div
           className="rounded-xl border-2 p-6 mb-8"
@@ -181,7 +188,8 @@ export default function PillarDetailPage() {
             </div>
           </section>
         )}
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }

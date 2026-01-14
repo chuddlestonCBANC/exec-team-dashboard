@@ -29,6 +29,8 @@ import {
 import { useAuth } from '@/components/providers/AuthProvider';
 import { DashboardData, Executive, Metric } from '@/types';
 import { HubSpotFilterBuilder } from '@/components/integrations/HubSpotFilterBuilder';
+import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
+import { getCurrentWeekOf } from '@/lib/utils/formatting';
 import {
   ArrowLeft,
   Settings,
@@ -77,6 +79,7 @@ export default function AdminPage() {
   const [executives, setExecutives] = useState<Executive[]>([]);
   const [users, setUsers] = useState<ApprovedUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekOf());
 
   const loadData = async () => {
     setLoading(true);
@@ -117,32 +120,31 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--gray-100)]">
-      {/* Header */}
-      <header className="bg-white border-b border-[var(--gray-200)] sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/"
-                className="flex items-center gap-2 text-[var(--gray-600)] hover:text-[var(--primary)] transition-colors"
-              >
-                <ArrowLeft size={20} />
-                <span className="text-sm font-medium">Back to Dashboard</span>
-              </Link>
-              <div className="h-6 w-px bg-[var(--gray-200)]" />
-              <div className="flex items-center gap-2">
-                <Settings size={20} className="text-[var(--primary)]" />
-                <h1 className="text-lg font-semibold text-[var(--gray-800)]">
-                  Admin Configuration
-                </h1>
-              </div>
+    <>
+      <DashboardHeader
+        selectedWeek={selectedWeek}
+        onWeekChange={setSelectedWeek}
+        onRefresh={loadData}
+        isRefreshing={loading}
+      />
+      <div className="min-h-screen bg-[var(--gray-100)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex items-center gap-4 mb-6">
+            <Link
+              href="/"
+              className="flex items-center gap-2 text-[var(--gray-600)] hover:text-[var(--primary)] transition-colors"
+            >
+              <ArrowLeft size={20} />
+              <span className="text-sm font-medium">Back to Dashboard</span>
+            </Link>
+            <div className="h-6 w-px bg-[var(--gray-200)]" />
+            <div className="flex items-center gap-2">
+              <Settings size={20} className="text-[var(--primary)]" />
+              <h1 className="text-lg font-semibold text-[var(--gray-800)]">
+                Admin Configuration
+              </h1>
             </div>
           </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-8">
           {/* Sidebar */}
           <nav className="w-56 flex-shrink-0">
@@ -173,8 +175,9 @@ export default function AdminPage() {
             {activeTab === 'integrations' && <IntegrationsConfig />}
           </main>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
