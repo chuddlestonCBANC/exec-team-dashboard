@@ -80,20 +80,70 @@ export async function POST(
     const replaceDatePlaceholders = (queryString: string): string => {
       const now = new Date();
       const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
+      const month = now.getMonth(); // 0-indexed
 
-      // Get first day of current month
-      const monthStart = `${year}-${month}-01`;
+      // Helper to format date as YYYY-MM-DD
+      const formatDate = (d: Date): string => {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      };
 
-      // Get last day of current month
-      const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
-      const monthEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+      // Current date
+      const currentDate = formatDate(now);
+
+      // Current month
+      const currentMonthStart = new Date(year, month, 1);
+      const currentMonthEnd = new Date(year, month + 1, 0);
+
+      // Last month
+      const lastMonthStart = new Date(year, month - 1, 1);
+      const lastMonthEnd = new Date(year, month, 0);
+
+      // Current quarter (Q1=0-2, Q2=3-5, Q3=6-8, Q4=9-11)
+      const currentQuarter = Math.floor(month / 3);
+      const currentQuarterStart = new Date(year, currentQuarter * 3, 1);
+      const currentQuarterEnd = new Date(year, currentQuarter * 3 + 3, 0);
+
+      // Last quarter
+      const lastQuarterMonth = currentQuarter * 3 - 3;
+      const lastQuarterYear = lastQuarterMonth < 0 ? year - 1 : year;
+      const lastQuarterStartMonth = lastQuarterMonth < 0 ? 9 : lastQuarterMonth; // Q4 of last year if negative
+      const lastQuarterStart = new Date(lastQuarterYear, lastQuarterStartMonth, 1);
+      const lastQuarterEnd = new Date(lastQuarterYear, lastQuarterStartMonth + 3, 0);
+
+      // Current year
+      const currentYearStart = new Date(year, 0, 1);
+      const currentYearEnd = new Date(year, 11, 31);
+
+      // Last year
+      const lastYearStart = new Date(year - 1, 0, 1);
+      const lastYearEnd = new Date(year - 1, 11, 31);
+
+      // Year to date (Jan 1 to today)
+      const ytdStart = new Date(year, 0, 1);
 
       return queryString
-        .replace(/CURRENT_MONTH_START/g, monthStart)
-        .replace(/CURRENT_MONTH_END/g, monthEnd)
-        .replace(/CURRENT_DATE/g, `${year}-${month}-${day}`);
+        // Current date
+        .replace(/CURRENT_DATE/g, currentDate)
+        // Current month
+        .replace(/CURRENT_MONTH_START/g, formatDate(currentMonthStart))
+        .replace(/CURRENT_MONTH_END/g, formatDate(currentMonthEnd))
+        // Last month
+        .replace(/LAST_MONTH_START/g, formatDate(lastMonthStart))
+        .replace(/LAST_MONTH_END/g, formatDate(lastMonthEnd))
+        // Current quarter
+        .replace(/CURRENT_QUARTER_START/g, formatDate(currentQuarterStart))
+        .replace(/CURRENT_QUARTER_END/g, formatDate(currentQuarterEnd))
+        // Last quarter
+        .replace(/LAST_QUARTER_START/g, formatDate(lastQuarterStart))
+        .replace(/LAST_QUARTER_END/g, formatDate(lastQuarterEnd))
+        // Current year
+        .replace(/CURRENT_YEAR_START/g, formatDate(currentYearStart))
+        .replace(/CURRENT_YEAR_END/g, formatDate(currentYearEnd))
+        // Last year
+        .replace(/LAST_YEAR_START/g, formatDate(lastYearStart))
+        .replace(/LAST_YEAR_END/g, formatDate(lastYearEnd))
+        // Year to date
+        .replace(/YTD_START/g, formatDate(ytdStart));
     };
 
     // Perform the sync based on integration type
