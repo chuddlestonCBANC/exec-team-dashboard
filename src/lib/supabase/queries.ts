@@ -2101,7 +2101,15 @@ export async function updateCommitment(
 
   if (updates.title !== undefined) updateData.title = updates.title;
   if (updates.description !== undefined) updateData.description = updates.description;
-  if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.status !== undefined) {
+    updateData.status = updates.status;
+    // Set completed_at when status changes to completed
+    if (updates.status === 'completed') {
+      updateData.completed_at = new Date().toISOString();
+    } else {
+      updateData.completed_at = null;
+    }
+  }
   if (updates.targetDate !== undefined) updateData.target_date = updates.targetDate;
 
   return await supabase
