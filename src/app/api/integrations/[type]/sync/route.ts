@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { createHubSpotClient } from '@/lib/integrations/hubspot';
 import { createJiraClient } from '@/lib/integrations/jira';
+import { createGoogleSheetsClient } from '@/lib/integrations/sheets';
 
 // POST - Trigger a sync for an integration
 export async function POST(
@@ -182,6 +183,55 @@ export async function POST(
           recordsUpdated += 1;
         } catch (error: any) {
           console.error(`Error processing Jira mapping ${mapping.id}:`, error);
+          // Continue with other mappings
+        }
+      }
+    } else if (type === 'google_sheets') {
+      const client = createGoogleSheetsClient(integration.config);
+
+      // Process each mapping
+      for (const mapping of mappings) {
+        try {
+          // Query format: JSON with spreadsheetId, range, valueColumnIndex, hasHeaderRow
+          const queryConfig = JSON.parse(mapping.query);
+          const spreadsheetId = queryConfig.spreadsheetId || integration.config.defaultSpreadsheetId;
+
+          if (!spreadsheetId) {
+            console.error(`No spreadsheet ID configured for mapping ${mapping.id}`);
+            continue;
+          }
+
+          // Execute query with aggregation
+          const value = await client.executeQueryWithAggregation(
+            spreadsheetId,
+            queryConfig.range,
+            mapping.aggregation_method || 'sum',
+            queryConfig.valueColumnIndex || 0,
+            queryConfig.hasHeaderRow !== false // Default to true
+          );
+
+          recordsFetched += 1;
+
+          // Apply transformation rules if any
+          let finalValue = value;
+          if (mapping.transformation_rules) {
+            if (mapping.transformation_rules.divide) {
+              finalValue = finalValue / mapping.transformation_rules.divide;
+            }
+            if (mapping.transformation_rules.multiply) {
+              finalValue = finalValue * mapping.transformation_rules.multiply;
+            }
+          }
+
+          // Update the metric
+          await supabase
+            .from('metrics')
+            .update({ current_value: finalValue })
+            .eq('id', mapping.metric_id);
+
+          recordsUpdated += 1;
+        } catch (error: any) {
+          console.error(`Error processing Google Sheets mapping ${mapping.id}:`, error);
           // Continue with other mappings
         }
       }

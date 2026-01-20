@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { createHubSpotClient } from '@/lib/integrations/hubspot';
 import { createJiraClient } from '@/lib/integrations/jira';
+import { createGoogleSheetsClient } from '@/lib/integrations/sheets';
 
 // GET - Get integration status and configuration
 export async function GET(
@@ -33,6 +34,9 @@ export async function GET(
       apiKey: integration.config.apiKey ? '••••••••' : undefined,
       accessToken: integration.config.accessToken ? '••••••••' : undefined,
       apiToken: integration.config.apiToken ? '••••••••' : undefined,
+      privateKey: integration.config.privateKey ? '••••••••' : undefined,
+      clientSecret: integration.config.clientSecret ? '••••••••' : undefined,
+      refreshToken: integration.config.refreshToken ? '••••••••' : undefined,
     };
   }
 
@@ -63,6 +67,9 @@ export async function POST(
       isValid = await client.testConnection();
     } else if (type === 'jira') {
       const client = createJiraClient(config);
+      isValid = await client.testConnection();
+    } else if (type === 'google_sheets') {
+      const client = createGoogleSheetsClient(config);
       isValid = await client.testConnection();
     }
   } catch (error: any) {

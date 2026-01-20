@@ -1013,6 +1013,30 @@ function MetricsConfig({ pillars, executives, onRefresh }: { pillars: any[]; exe
               <p className="text-xs text-[var(--gray-500)] mt-1">Below this = Red</p>
             </div>
 
+            {/* Parent Metric (for sub-metrics) */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-[var(--gray-700)] mb-1">
+                Parent Metric (optional)
+              </label>
+              <select
+                value={formData.parentMetricId}
+                onChange={(e) => setFormData({ ...formData, parentMetricId: e.target.value })}
+                className="w-full px-3 py-2 border border-[var(--gray-200)] rounded-lg focus:outline-none focus:border-[var(--primary)]"
+              >
+                <option value="">None (Top-level metric)</option>
+                {metrics
+                  .filter((m: any) => m.id !== editingId) // Can't be parent of itself
+                  .map((m: any) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-[var(--gray-500)] mt-1">
+                Select a parent to make this a sub-metric that appears when drilling down
+              </p>
+            </div>
+
             {/* Owners */}
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-[var(--gray-700)] mb-2">Owners</label>
@@ -1998,11 +2022,15 @@ function IntegrationsConfig() {
       ],
     },
     {
-      id: 'sheets',
+      id: 'google_sheets',
       name: 'Google Sheets',
-      description: 'Manual data entry and imports',
+      description: 'Import data from spreadsheets',
       icon: '📊',
-      comingSoon: true,
+      fields: [
+        { name: 'serviceAccountEmail', label: 'Service Account Email', type: 'email', placeholder: 'your-service@project.iam.gserviceaccount.com' },
+        { name: 'privateKey', label: 'Private Key (from JSON key file)', type: 'password', placeholder: '-----BEGIN PRIVATE KEY-----...' },
+        { name: 'defaultSpreadsheetId', label: 'Default Spreadsheet ID (optional)', type: 'text', placeholder: 'Get from spreadsheet URL: /d/{THIS_ID}/edit' },
+      ],
     },
   ];
 
@@ -2015,9 +2043,6 @@ function IntegrationsConfig() {
     try {
       const statuses = await Promise.all(
         integrationDefs.map(async (def) => {
-          if (def.comingSoon) {
-            return { ...def, status: 'coming_soon', config: null };
-          }
           try {
             const response = await fetch(`/api/integrations/${def.id}`);
             const data = await response.json();
@@ -2155,11 +2180,7 @@ function IntegrationsConfig() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {integration.comingSoon ? (
-                  <span className="px-3 py-1 text-sm bg-[var(--gray-100)] text-[var(--gray-500)] rounded-full">
-                    Coming Soon
-                  </span>
-                ) : integration.status === 'connected' ? (
+                {integration.status === 'connected' ? (
                   <>
                     <button
                       onClick={() => handleSync(integration.id)}
