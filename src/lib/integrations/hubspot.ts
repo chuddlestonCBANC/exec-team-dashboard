@@ -40,9 +40,8 @@ export class HubSpotClient {
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}) {
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
     };
 
     // Use access token if available, otherwise fall back to API key

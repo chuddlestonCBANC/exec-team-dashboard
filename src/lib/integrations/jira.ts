@@ -58,11 +58,10 @@ export class JiraClient {
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}) {
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Authorization': this.getAuthHeader(),
       'Accept': 'application/json',
       'Content-Type': 'application/json',
-      ...options.headers,
     };
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
