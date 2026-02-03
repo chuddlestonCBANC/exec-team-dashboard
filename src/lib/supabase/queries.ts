@@ -187,13 +187,20 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
   const supabase = createClient();
   const currentWeek = getCurrentWeekOf();
 
+  // Calculate current period info for period targets
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const currentQuarter = Math.ceil(currentMonth / 3); // 1-4
+
   // Fetch ALL data in parallel
-  const [executivesResult, metricOwnersResult, commitmentsResult, reportsResult, metricsResult] = await Promise.all([
+  const [executivesResult, metricOwnersResult, commitmentsResult, reportsResult, metricsResult, periodTargetsResult] = await Promise.all([
     supabase.from('executives').select('*').order('sort_order'),
     supabase.from('metric_owners').select('metric_id, executive_id'),
     supabase.from('commitments').select('*, commitment_updates(*)'),
     supabase.from('executive_reports').select('*').eq('week_of', currentWeek),
     supabase.from('metrics').select('*'),
+    supabase.from('metric_targets').select('*').eq('year', currentYear),
   ]);
 
   if (executivesResult.error) throw executivesResult.error;
@@ -227,6 +234,34 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
   const metricsById = new Map<string, any>();
   allMetrics.forEach((m: any) => metricsById.set(m.id, m));
 
+  // Build lookup for period targets
+  const periodTargetsByMetricId = new Map<string, Map<string, number>>();
+  (periodTargetsResult.data || []).forEach((pt: any) => {
+    if (!periodTargetsByMetricId.has(pt.metric_id)) {
+      periodTargetsByMetricId.set(pt.metric_id, new Map());
+    }
+    const key = `${pt.period}-${pt.period_number}`;
+    periodTargetsByMetricId.get(pt.metric_id)!.set(key, parseFloat(pt.target_value));
+  });
+
+  // Helper to get period target for a metric
+  const getPeriodTarget = (metricId: string, cadence: string, fallbackTarget: number): number => {
+    const targets = periodTargetsByMetricId.get(metricId);
+    if (!targets) return fallbackTarget;
+
+    let key: string;
+    if (cadence === 'monthly') {
+      key = `monthly-${currentMonth}`;
+    } else if (cadence === 'quarterly') {
+      key = `quarterly-${currentQuarter}`;
+    } else {
+      key = `quarterly-${currentQuarter}`;
+    }
+
+    const periodTarget = targets.get(key);
+    return periodTarget !== undefined ? periodTarget : fallbackTarget;
+  };
+
   // Build all executives at once
   const detailed: ExecutiveWithDetails[] = executives.map((exec) => {
     const ownedMetricIds = metricOwnersByExecId.get(exec.id) || [];
@@ -234,9 +269,13 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
       const metric = metricsById.get(metricId);
       if (!metric) return null;
 
+      // Get period target
+      const cadence = metric.cadence || 'quarterly';
+      const targetValue = getPeriodTarget(metric.id, cadence, metric.target_value);
+
       const status = getMetricStatus(
         metric.current_value,
-        metric.target_value,
+        targetValue,
         { green: metric.warning_threshold, yellow: metric.critical_threshold },
         metric.comparison_mode || 'at_or_above'
       );
@@ -248,7 +287,7 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
         description: metric.description,
         dataSource: metric.data_source,
         apiConfig: metric.api_config,
-        targetValue: metric.target_value,
+        targetValue: targetValue,
         warningThreshold: metric.warning_threshold,
         criticalThreshold: metric.critical_threshold,
         currentValue: metric.current_value,
@@ -260,11 +299,11 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
         unit: metric.unit,
         format: metric.format,
         comparisonMode: metric.comparison_mode || 'at_or_above',
-        cadence: metric.cadence || 'monthly',
+        cadence: cadence,
         createdAt: metric.created_at,
         updatedAt: metric.updated_at,
         status,
-        percentageOfTarget: getPercentageOfTarget(metric.current_value, metric.target_value, metric.comparison_mode || 'at_or_above'),
+        percentageOfTarget: getPercentageOfTarget(metric.current_value, targetValue, metric.comparison_mode || 'at_or_above'),
         owners: [],
         narratives: [],
         commitments: [],
@@ -277,6 +316,8 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
       .filter((c: any) => metricsById.has(c.metric_id))
       .map((c: any) => {
         const metric = metricsById.get(c.metric_id)!;
+        const metricCadence = metric.cadence || 'quarterly';
+        const metricTargetValue = getPeriodTarget(metric.id, metricCadence, metric.target_value);
         return {
           id: c.id,
           executiveId: c.executive_id,
@@ -295,7 +336,7 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
             description: metric.description,
             dataSource: metric.data_source,
             apiConfig: metric.api_config,
-            targetValue: metric.target_value,
+            targetValue: metricTargetValue,
             warningThreshold: metric.warning_threshold,
             criticalThreshold: metric.critical_threshold,
             currentValue: metric.current_value,
@@ -307,7 +348,7 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
             unit: metric.unit,
             format: metric.format,
             comparisonMode: metric.comparison_mode || 'at_or_above',
-            cadence: metric.cadence || 'monthly',
+            cadence: metricCadence,
             createdAt: metric.created_at,
             updatedAt: metric.updated_at,
           },
