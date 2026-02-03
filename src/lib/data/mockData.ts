@@ -470,8 +470,8 @@ function getMetricWithDetails(metric: Metric): MetricWithDetails {
 
   return {
     ...metric,
-    status: getMetricStatus(metric.currentValue, metric.targetValue, { green: 90, yellow: 70 }, metric.comparisonMode),
-    percentageOfTarget: getPercentageOfTarget(metric.currentValue, metric.targetValue),
+    status: getMetricStatus(metric.currentValue, metric.targetValue, { green: metric.warningThreshold, yellow: metric.criticalThreshold }, metric.comparisonMode),
+    percentageOfTarget: getPercentageOfTarget(metric.currentValue, metric.targetValue, metric.comparisonMode),
     owners,
     childMetrics: childMetrics.length > 0 ? childMetrics : undefined,
     narratives: metricNarratives,

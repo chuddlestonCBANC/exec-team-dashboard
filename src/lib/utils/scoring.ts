@@ -91,16 +91,46 @@ export function getOnTrackStatus(
   return getStatusFromPercentage(pacePercentage, thresholds);
 }
 
-export function getPercentageOfTarget(currentValue: number, targetValue: number): number {
+export function getPercentageOfTarget(
+  currentValue: number,
+  targetValue: number,
+  comparisonMode: ComparisonMode = 'at_or_above'
+): number {
   if (targetValue === 0) return 0;
-  return Math.round((currentValue / targetValue) * 100);
+
+  switch (comparisonMode) {
+    case 'at_or_below':
+      // Lower is better - if at or below target, that's 100%+
+      // Calculate how well we're doing (being under target is good)
+      if (currentValue <= targetValue) {
+        // Under target is great - cap at 100% for display purposes
+        return 100;
+      }
+      // Over target - calculate how far over (inverted)
+      // e.g., if target is 30 and current is 40, we're 33% over, so ~75% "good"
+      const overageRatio = currentValue / targetValue;
+      return Math.round(Math.max(0, (2 - overageRatio) * 100));
+
+    case 'exact':
+      // Must be exactly at target
+      const variance = Math.abs(currentValue - targetValue) / targetValue;
+      return Math.round(Math.max(0, (1 - variance) * 100));
+
+    case 'at_or_above':
+    case 'on_track':
+    default:
+      // Higher is better - simple ratio
+      return Math.round((currentValue / targetValue) * 100);
+  }
 }
 
 export function getPillarScore(metrics: Metric[]): number {
   if (metrics.length === 0) return 0;
 
   const totalPercentage = metrics.reduce((sum, metric) => {
-    return sum + getPercentageOfTarget(metric.currentValue, metric.targetValue);
+    // Use the metric's comparison mode to calculate percentage correctly
+    const comparisonMode = (metric as any).comparisonMode || 'at_or_above';
+    return sum + getPercentageOfTarget(metric.currentValue, metric.targetValue, comparisonMode);
   }, 0);
 
   return Math.round(totalPercentage / metrics.length);

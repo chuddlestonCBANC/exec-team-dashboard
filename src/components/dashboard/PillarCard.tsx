@@ -16,9 +16,9 @@ export function PillarCard({ pillar }: PillarCardProps) {
   const statusColor = getStatusColor(pillar.status);
   const statusBgColor = getStatusBgColor(pillar.status);
 
-  // Calculate metrics summary
+  // Calculate metrics summary - use actual metric status instead of hardcoded threshold
   const greenMetrics = pillar.metrics.filter(
-    (m) => m.currentValue / m.targetValue >= 0.9
+    (m) => m.status === 'green'
   ).length;
   const totalMetrics = pillar.metrics.length;
 

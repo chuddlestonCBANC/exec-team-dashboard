@@ -20,7 +20,7 @@ export function MetricCard({ metric, showOwners = true }: MetricCardProps) {
     { green: metric.warningThreshold, yellow: metric.criticalThreshold },
     metric.comparisonMode
   );
-  const percentage = getPercentageOfTarget(metric.currentValue, metric.targetValue);
+  const percentage = getPercentageOfTarget(metric.currentValue, metric.targetValue, metric.comparisonMode);
   const statusColor = getStatusColor(status);
   const statusBgColor = getStatusBgColor(status);
 
