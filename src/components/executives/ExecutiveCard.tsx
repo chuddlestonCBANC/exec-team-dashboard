@@ -69,7 +69,7 @@ export function ExecutiveCard({ executive, isExpanded: initialExpanded = false, 
   );
 
   const metricsNeedingAttention = executive.ownedMetrics.filter((m) => {
-    const status = getMetricStatus(m.currentValue, m.targetValue, { green: 90, yellow: 70 }, m.comparisonMode);
+    const status = getMetricStatus(m.currentValue, m.targetValue, { green: m.warningThreshold, yellow: m.criticalThreshold }, m.comparisonMode);
     return status === 'red' || status === 'yellow';
   });
 
@@ -312,7 +312,7 @@ Share updates on your team's progress, key accomplishments, challenges, and prio
               </h4>
               <div className="space-y-2">
                 {metricsNeedingAttention.map((metric) => {
-                  const status = getMetricStatus(metric.currentValue, metric.targetValue, { green: 90, yellow: 70 }, metric.comparisonMode);
+                  const status = getMetricStatus(metric.currentValue, metric.targetValue, { green: metric.warningThreshold, yellow: metric.criticalThreshold }, metric.comparisonMode);
                   return (
                     <div
                       key={metric.id}

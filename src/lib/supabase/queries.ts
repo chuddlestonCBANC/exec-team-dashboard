@@ -237,7 +237,7 @@ export async function getExecutivesWithDetails(): Promise<ExecutiveWithDetails[]
       const status = getMetricStatus(
         metric.current_value,
         metric.target_value,
-        { green: 90, yellow: 70 },
+        { green: metric.warning_threshold, yellow: metric.critical_threshold },
         metric.comparison_mode || 'at_or_above'
       );
 
@@ -518,7 +518,7 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
     const status = getMetricStatus(
       metric.current_value,
       metric.target_value,
-      { green: 90, yellow: 70 },
+      { green: metric.warning_threshold, yellow: metric.critical_threshold },
       metric.comparison_mode || 'at_or_above'
     );
 
@@ -678,7 +678,7 @@ async function buildMetricWithDetails(metric: any): Promise<MetricWithDetails> {
   const status = getMetricStatus(
     metric.current_value,
     metric.target_value,
-    { green: 90, yellow: 70 },
+    { green: metric.warning_threshold, yellow: metric.critical_threshold },
     metric.comparison_mode || 'at_or_above'
   );
 
