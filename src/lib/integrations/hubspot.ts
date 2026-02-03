@@ -213,21 +213,30 @@ export class HubSpotClient {
     const filters: any[] = [];
     Object.entries(filterCriteria).forEach(([propertyName, criteria]) => {
       if (typeof criteria === 'object' && criteria !== null) {
-        // Handle operators like { gte: "2024-01-01" } or { neq: ["value1", "value2"] }
+        // Handle operators like { gte: "2024-01-01" } or { in: ["value1", "value2"] }
         Object.entries(criteria).forEach(([operator, value]) => {
-          // If value is an array, create multiple filters (for NEQ, etc.)
-          if (Array.isArray(value)) {
+          const upperOp = operator.toUpperCase();
+
+          // IN operator requires 'values' array instead of 'value'
+          if (upperOp === 'IN' && Array.isArray(value)) {
+            filters.push({
+              propertyName,
+              operator: upperOp,
+              values: value
+            });
+          } else if (Array.isArray(value)) {
+            // For other operators with arrays (like NEQ), create multiple filters
             value.forEach((v) => {
               filters.push({
                 propertyName,
-                operator: operator.toUpperCase(),
+                operator: upperOp,
                 value: v
               });
             });
           } else {
             filters.push({
               propertyName,
-              operator: operator.toUpperCase(),
+              operator: upperOp,
               value
             });
           }
