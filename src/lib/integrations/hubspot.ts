@@ -170,7 +170,7 @@ export class HubSpotClient {
   async executeQueryWithAggregation(
     objectType: 'deals' | 'contacts' | 'companies',
     filterCriteria: Record<string, any>,
-    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'ratio',
+    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'ratio' | 'average_days_between',
     valueField?: string
   ): Promise<number> {
     // Handle ratio aggregation (e.g., for win rate: closedwon / (closedwon + closedlost))
@@ -200,6 +200,84 @@ export class HubSpotClient {
 
       // Return as percentage (multiply by 100)
       return (numeratorValue / denominatorValue) * 100;
+    }
+
+    // Handle average_days_between aggregation (e.g., for opportunity age: closedate - createdate)
+    if (aggregationMethod === 'average_days_between') {
+      if (!filterCriteria._startDateField || !filterCriteria._endDateField) {
+        throw new Error('average_days_between requires _startDateField and _endDateField in filter criteria');
+      }
+
+      const startDateField = filterCriteria._startDateField;
+      const endDateField = filterCriteria._endDateField;
+
+      // Remove special fields from filter criteria
+      const cleanCriteria = { ...filterCriteria };
+      delete cleanCriteria._startDateField;
+      delete cleanCriteria._endDateField;
+
+      // Fetch all matching records with both date fields
+      const searchBody: any = {
+        limit: 100,
+        properties: [startDateField, endDateField],
+        filterGroups: []
+      };
+
+      // Build filters from clean criteria
+      const filters: any[] = [];
+      Object.entries(cleanCriteria).forEach(([propertyName, criteria]) => {
+        if (propertyName.startsWith('_')) return; // Skip internal fields
+        if (typeof criteria === 'object' && criteria !== null) {
+          Object.entries(criteria).forEach(([operator, value]) => {
+            const upperOp = operator.toUpperCase();
+            if (upperOp === 'IN' && Array.isArray(value)) {
+              filters.push({ propertyName, operator: upperOp, values: value });
+            } else if (Array.isArray(value)) {
+              value.forEach((v) => filters.push({ propertyName, operator: upperOp, value: v }));
+            } else {
+              filters.push({ propertyName, operator: upperOp, value });
+            }
+          });
+        } else {
+          filters.push({ propertyName, operator: 'EQ', value: criteria });
+        }
+      });
+
+      if (filters.length > 0) {
+        searchBody.filterGroups.push({ filters });
+      }
+
+      // Fetch all results
+      let allResults: any[] = [];
+      let hasMore = true;
+      let after: string | undefined;
+
+      while (hasMore && allResults.length < 10000) {
+        if (after) searchBody.after = after;
+        const response = await this.makeRequest(`/crm/v3/objects/${objectType}/search`, {
+          method: 'POST',
+          body: JSON.stringify(searchBody)
+        });
+        allResults = allResults.concat(response.results || []);
+        hasMore = response.paging?.next !== undefined;
+        after = response.paging?.next?.after;
+      }
+
+      // Calculate average days between dates
+      const daysDiffs: number[] = [];
+      allResults.forEach((obj) => {
+        const startDate = obj.properties?.[startDateField];
+        const endDate = obj.properties?.[endDateField];
+        if (startDate && endDate) {
+          const start = new Date(startDate).getTime();
+          const end = new Date(endDate).getTime();
+          const diffDays = Math.abs(end - start) / (1000 * 60 * 60 * 24);
+          daysDiffs.push(diffDays);
+        }
+      });
+
+      if (daysDiffs.length === 0) return 0;
+      return daysDiffs.reduce((acc, val) => acc + val, 0) / daysDiffs.length;
     }
 
     // Build search request
