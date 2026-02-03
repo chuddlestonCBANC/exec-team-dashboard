@@ -87,6 +87,11 @@ export async function POST(
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       };
 
+      // Helper to format end-of-day date (includes full day for LTE comparisons)
+      const formatEndOfDay = (d: Date): string => {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T23:59:59.999Z`;
+      };
+
       // Current date
       const currentDate = formatDate(now);
 
@@ -139,30 +144,30 @@ export async function POST(
         .replace(/CURRENT_DATE/g, currentDate)
         // Current month
         .replace(/CURRENT_MONTH_START/g, formatDate(currentMonthStart))
-        .replace(/CURRENT_MONTH_END/g, formatDate(currentMonthEnd))
+        .replace(/CURRENT_MONTH_END/g, formatEndOfDay(currentMonthEnd))
         // Last month
         .replace(/LAST_MONTH_START/g, formatDate(lastMonthStart))
-        .replace(/LAST_MONTH_END/g, formatDate(lastMonthEnd))
+        .replace(/LAST_MONTH_END/g, formatEndOfDay(lastMonthEnd))
         // Current quarter
         .replace(/CURRENT_QUARTER_START/g, formatDate(currentQuarterStart))
-        .replace(/CURRENT_QUARTER_END/g, formatDate(currentQuarterEnd))
+        .replace(/CURRENT_QUARTER_END/g, formatEndOfDay(currentQuarterEnd))
         // Last quarter
         .replace(/LAST_QUARTER_START/g, formatDate(lastQuarterStart))
-        .replace(/LAST_QUARTER_END/g, formatDate(lastQuarterEnd))
+        .replace(/LAST_QUARTER_END/g, formatEndOfDay(lastQuarterEnd))
         // Current year
         .replace(/CURRENT_YEAR_START/g, formatDate(currentYearStart))
-        .replace(/CURRENT_YEAR_END/g, formatDate(currentYearEnd))
+        .replace(/CURRENT_YEAR_END/g, formatEndOfDay(currentYearEnd))
         // Last year
         .replace(/LAST_YEAR_START/g, formatDate(lastYearStart))
-        .replace(/LAST_YEAR_END/g, formatDate(lastYearEnd))
+        .replace(/LAST_YEAR_END/g, formatEndOfDay(lastYearEnd))
         // Year to date
         .replace(/YTD_START/g, formatDate(ytdStart))
         // Current week
         .replace(/CURRENT_WEEK_START/g, formatDate(currentWeekStart))
-        .replace(/CURRENT_WEEK_END/g, formatDate(currentWeekEnd))
+        .replace(/CURRENT_WEEK_END/g, formatEndOfDay(currentWeekEnd))
         // Last week
         .replace(/LAST_WEEK_START/g, formatDate(lastWeekStart))
-        .replace(/LAST_WEEK_END/g, formatDate(lastWeekEnd));
+        .replace(/LAST_WEEK_END/g, formatEndOfDay(lastWeekEnd));
     };
 
     // Perform the sync based on integration type
