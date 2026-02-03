@@ -239,9 +239,38 @@ export class JiraClient {
   // Execute custom JQL query and aggregate results
   async executeQueryWithAggregation(
     jql: string,
-    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min',
+    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'average_days_between',
     valueField?: string
   ): Promise<number> {
+    // For average_days_between, we need created and resolutiondate fields
+    if (aggregationMethod === 'average_days_between') {
+      const fields = ['created', 'resolutiondate', 'summary', 'status'];
+      const issues = await this.searchIssues(jql, 100, fields);
+
+      // Calculate average days between created and resolutiondate
+      const durations: number[] = [];
+      issues.forEach((issue) => {
+        const created = issue.fields.created;
+        const resolved = issue.fields.resolutiondate;
+
+        if (created && resolved) {
+          const createdDate = new Date(created);
+          const resolvedDate = new Date(resolved);
+          const days = (resolvedDate.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
+          if (days >= 0) {
+            durations.push(days);
+          }
+        }
+      });
+
+      if (durations.length === 0) {
+        return 0;
+      }
+
+      const average = durations.reduce((acc, val) => acc + val, 0) / durations.length;
+      return Math.round(average * 10) / 10; // Round to 1 decimal place
+    }
+
     // Include valueField in the fields to fetch
     const fields = valueField ? [valueField, 'summary', 'status'] : ['summary', 'status'];
     const issues = await this.searchIssues(jql, 100, fields);
