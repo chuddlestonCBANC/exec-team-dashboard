@@ -121,6 +121,19 @@ export async function POST(
       // Year to date (Jan 1 to today)
       const ytdStart = new Date(year, 0, 1);
 
+      // Current week (Sunday to Saturday)
+      const dayOfWeek = now.getDay(); // 0 = Sunday
+      const currentWeekStart = new Date(now);
+      currentWeekStart.setDate(now.getDate() - dayOfWeek);
+      const currentWeekEnd = new Date(currentWeekStart);
+      currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
+
+      // Last week
+      const lastWeekStart = new Date(currentWeekStart);
+      lastWeekStart.setDate(currentWeekStart.getDate() - 7);
+      const lastWeekEnd = new Date(lastWeekStart);
+      lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+
       return queryString
         // Current date
         .replace(/CURRENT_DATE/g, currentDate)
@@ -143,7 +156,13 @@ export async function POST(
         .replace(/LAST_YEAR_START/g, formatDate(lastYearStart))
         .replace(/LAST_YEAR_END/g, formatDate(lastYearEnd))
         // Year to date
-        .replace(/YTD_START/g, formatDate(ytdStart));
+        .replace(/YTD_START/g, formatDate(ytdStart))
+        // Current week
+        .replace(/CURRENT_WEEK_START/g, formatDate(currentWeekStart))
+        .replace(/CURRENT_WEEK_END/g, formatDate(currentWeekEnd))
+        // Last week
+        .replace(/LAST_WEEK_START/g, formatDate(lastWeekStart))
+        .replace(/LAST_WEEK_END/g, formatDate(lastWeekEnd));
     };
 
     // Perform the sync based on integration type

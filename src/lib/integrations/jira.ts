@@ -89,13 +89,20 @@ export class JiraClient {
   }
 
   // Search issues with JQL
-  async searchIssues(jql: string, maxResults: number = 100): Promise<JiraIssue[]> {
-    const params = new URLSearchParams();
-    params.append('jql', jql);
-    params.append('maxResults', maxResults.toString());
+  async searchIssues(jql: string, maxResults: number = 100, fields?: string[]): Promise<JiraIssue[]> {
+    // Use POST to /search/jql as required by the new Jira API
+    const body: any = {
+      jql,
+      maxResults,
+    };
+    if (fields && fields.length > 0) {
+      body.fields = fields;
+    }
 
-    // Use the new /search/jql endpoint (v3 API)
-    const response = await this.makeRequest(`/search/jql?${params.toString()}`);
+    const response = await this.makeRequest('/search/jql', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
     return response.issues || [];
   }
 
@@ -235,7 +242,9 @@ export class JiraClient {
     aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min',
     valueField?: string
   ): Promise<number> {
-    const issues = await this.searchIssues(jql);
+    // Include valueField in the fields to fetch
+    const fields = valueField ? [valueField, 'summary', 'status'] : ['summary', 'status'];
+    const issues = await this.searchIssues(jql, 100, fields);
 
     if (aggregationMethod === 'count') {
       return issues.length;
