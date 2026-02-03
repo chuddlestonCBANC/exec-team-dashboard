@@ -14,7 +14,12 @@ interface MetricCardProps {
 }
 
 export function MetricCard({ metric, showOwners = true }: MetricCardProps) {
-  const status = getMetricStatus(metric.currentValue, metric.targetValue);
+  const status = getMetricStatus(
+    metric.currentValue,
+    metric.targetValue,
+    { green: 90, yellow: 70 },
+    metric.comparisonMode
+  );
   const percentage = getPercentageOfTarget(metric.currentValue, metric.targetValue);
   const statusColor = getStatusColor(status);
   const statusBgColor = getStatusBgColor(status);
