@@ -397,13 +397,20 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
   const startTime = Date.now();
   const supabase = createClient();
 
+  // Calculate current period info for period targets
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const currentQuarter = Math.ceil(currentMonth / 3); // 1-4
+
   // Fetch ALL data in parallel with a single batch
-  const [metricsResult, ownersResult, narrativesResult, commitmentsResult, historyResult] = await Promise.all([
+  const [metricsResult, ownersResult, narrativesResult, commitmentsResult, historyResult, periodTargetsResult] = await Promise.all([
     supabase.from('metrics').select('*').eq('pillar_id', pillarId).order('metric_type'),
     supabase.from('metric_owners').select('metric_id, executive_id, executives(*)'),
     supabase.from('narratives').select('*'),
     supabase.from('commitments').select('*, commitment_updates(*)'),
     supabase.from('metric_history').select('*').order('recorded_at', { ascending: false }),
+    supabase.from('metric_targets').select('*').eq('year', currentYear),
   ]);
 
   if (metricsResult.error) throw metricsResult.error;
@@ -443,6 +450,35 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
     }
   });
 
+  // Build lookup for period targets - key is "metricId-period-periodNumber"
+  const periodTargetsByMetricId = new Map<string, Map<string, number>>();
+  (periodTargetsResult.data || []).forEach((pt: any) => {
+    if (!periodTargetsByMetricId.has(pt.metric_id)) {
+      periodTargetsByMetricId.set(pt.metric_id, new Map());
+    }
+    const key = `${pt.period}-${pt.period_number}`;
+    periodTargetsByMetricId.get(pt.metric_id)!.set(key, parseFloat(pt.target_value));
+  });
+
+  // Helper to get period target for a metric
+  const getPeriodTarget = (metricId: string, cadence: string, fallbackTarget: number): number => {
+    const targets = periodTargetsByMetricId.get(metricId);
+    if (!targets) return fallbackTarget;
+
+    let key: string;
+    if (cadence === 'monthly') {
+      key = `monthly-${currentMonth}`;
+    } else if (cadence === 'quarterly') {
+      key = `quarterly-${currentQuarter}`;
+    } else {
+      // For annual or other, try quarterly first, then fall back
+      key = `quarterly-${currentQuarter}`;
+    }
+
+    const periodTarget = targets.get(key);
+    return periodTarget !== undefined ? periodTarget : fallbackTarget;
+  };
+
   // Build all metrics at once using lookup maps
   const detailedMetrics: MetricWithDetails[] = metrics.map((metric) => {
     const owners = (ownersByMetricId.get(metric.id) || []).map((o: any) => ({
@@ -465,6 +501,10 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
       updatedAt: n.updated_at,
     }));
 
+    // Get period target for commitments (need to calculate before using in commitment)
+    const metricCadence = metric.cadence || 'quarterly';
+    const metricTargetValue = getPeriodTarget(metric.id, metricCadence, metric.target_value);
+
     const commitments = (commitmentsByMetricId.get(metric.id) || []).map((c: any) => ({
       id: c.id,
       executiveId: c.executive_id,
@@ -483,7 +523,7 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
         description: metric.description,
         dataSource: metric.data_source,
         apiConfig: metric.api_config,
-        targetValue: metric.target_value,
+        targetValue: metricTargetValue,
         warningThreshold: metric.warning_threshold,
         criticalThreshold: metric.critical_threshold,
         currentValue: metric.current_value,
@@ -495,7 +535,7 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
         unit: metric.unit,
         format: metric.format,
         comparisonMode: metric.comparison_mode || 'at_or_above',
-        cadence: metric.cadence || 'monthly',
+        cadence: metricCadence,
         createdAt: metric.created_at,
         updatedAt: metric.updated_at,
       },
@@ -515,9 +555,13 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
       recordedAt: h.recorded_at,
     }));
 
+    // Get period target (falls back to metric's base target_value if no period target exists)
+    const cadence = metric.cadence || 'quarterly';
+    const targetValue = getPeriodTarget(metric.id, cadence, metric.target_value);
+
     const status = getMetricStatus(
       metric.current_value,
-      metric.target_value,
+      targetValue,
       { green: metric.warning_threshold, yellow: metric.critical_threshold },
       metric.comparison_mode || 'at_or_above'
     );
@@ -529,7 +573,7 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
       description: metric.description,
       dataSource: metric.data_source,
       apiConfig: metric.api_config,
-      targetValue: metric.target_value,
+      targetValue: targetValue,
       warningThreshold: metric.warning_threshold,
       criticalThreshold: metric.critical_threshold,
       currentValue: metric.current_value,
@@ -541,11 +585,11 @@ export async function getMetricsByPillarId(pillarId: string): Promise<MetricWith
       unit: metric.unit,
       format: metric.format,
       comparisonMode: metric.comparison_mode || 'at_or_above',
-      cadence: metric.cadence || 'monthly',
+      cadence: cadence,
       createdAt: metric.created_at,
       updatedAt: metric.updated_at,
       status,
-      percentageOfTarget: getPercentageOfTarget(metric.current_value, metric.target_value, metric.comparison_mode || 'at_or_above'),
+      percentageOfTarget: getPercentageOfTarget(metric.current_value, targetValue, metric.comparison_mode || 'at_or_above'),
       owners,
       narratives,
       commitments,
@@ -582,11 +626,19 @@ export async function getMetricById(id: string): Promise<MetricWithDetails | nul
 async function buildMetricWithDetails(metric: any): Promise<MetricWithDetails> {
   const supabase = createClient();
 
-  // Get owners
-  const { data: ownerData } = await supabase
-    .from('metric_owners')
-    .select('executive_id, executives(*)')
-    .eq('metric_id', metric.id);
+  // Calculate current period info for period targets
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1-12
+  const currentQuarter = Math.ceil(currentMonth / 3); // 1-4
+
+  // Get owners and period target in parallel
+  const [ownerResult, periodTargetResult] = await Promise.all([
+    supabase.from('metric_owners').select('executive_id, executives(*)').eq('metric_id', metric.id),
+    supabase.from('metric_targets').select('*').eq('metric_id', metric.id).eq('year', currentYear),
+  ]);
+
+  const ownerData = ownerResult.data;
 
   const owners =
     ownerData?.map((o: any) => ({
@@ -675,9 +727,24 @@ async function buildMetricWithDetails(metric: any): Promise<MetricWithDetails> {
     }
   }
 
+  // Calculate period target
+  const cadence = metric.cadence || 'quarterly';
+  let targetValue = metric.target_value;
+
+  if (periodTargetResult.data && periodTargetResult.data.length > 0) {
+    const periodNumber = cadence === 'monthly' ? currentMonth : currentQuarter;
+    const periodType = cadence === 'monthly' ? 'monthly' : 'quarterly';
+    const periodTarget = periodTargetResult.data.find(
+      (pt: any) => pt.period === periodType && pt.period_number === periodNumber
+    );
+    if (periodTarget) {
+      targetValue = parseFloat(periodTarget.target_value);
+    }
+  }
+
   const status = getMetricStatus(
     metric.current_value,
-    metric.target_value,
+    targetValue,
     { green: metric.warning_threshold, yellow: metric.critical_threshold },
     metric.comparison_mode || 'at_or_above'
   );
@@ -689,7 +756,7 @@ async function buildMetricWithDetails(metric: any): Promise<MetricWithDetails> {
     description: metric.description,
     dataSource: metric.data_source,
     apiConfig: metric.api_config,
-    targetValue: metric.target_value,
+    targetValue: targetValue,
     currentValue: metric.current_value,
     previousValue: metric.previous_value,
     warningThreshold: metric.warning_threshold,
@@ -700,11 +767,11 @@ async function buildMetricWithDetails(metric: any): Promise<MetricWithDetails> {
     parentMetricId: metric.parent_metric_id,
     format: metric.format,
     comparisonMode: metric.comparison_mode || 'at_or_above',
-    cadence: metric.cadence || 'monthly',
+    cadence: cadence,
     createdAt: metric.created_at,
     updatedAt: metric.updated_at,
     status,
-    percentageOfTarget: getPercentageOfTarget(metric.current_value, metric.target_value, metric.comparison_mode || 'at_or_above'),
+    percentageOfTarget: getPercentageOfTarget(metric.current_value, targetValue, metric.comparison_mode || 'at_or_above'),
     owners,
     narratives,
     commitments,

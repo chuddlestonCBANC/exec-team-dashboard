@@ -7,7 +7,8 @@ export function getMetricStatus(
   thresholds: Thresholds = { green: 90, yellow: 70 },
   comparisonMode: ComparisonMode = 'at_or_above'
 ): MetricStatus {
-  if (targetValue === 0) return 'yellow';
+  // Handle zero target - if target is 0, consider it met (green)
+  if (targetValue === 0) return 'green';
 
   switch (comparisonMode) {
     case 'at_or_above':
@@ -96,7 +97,8 @@ export function getPercentageOfTarget(
   targetValue: number,
   comparisonMode: ComparisonMode = 'at_or_above'
 ): number {
-  if (targetValue === 0) return 0;
+  // Handle zero target - if target is 0, consider it 100% met
+  if (targetValue === 0) return 100;
 
   switch (comparisonMode) {
     case 'at_or_below':
