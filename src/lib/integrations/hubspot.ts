@@ -166,13 +166,171 @@ export class HubSpotClient {
     return response.results || [];
   }
 
+  // Get deals with their associated companies
+  private async getDealsWithCompanies(filterCriteria: Record<string, any>): Promise<Array<{deal: any, companyId: string | null}>> {
+    // Build search request with associations
+    const searchBody: any = {
+      limit: 100,
+      properties: ['amount', 'closedate', 'dealstage', 'pipeline', 'dealname', 'createdate'],
+      associations: ['companies'],
+      filterGroups: []
+    };
+
+    // Convert filter criteria to HubSpot filter format
+    const filters: any[] = [];
+    Object.entries(filterCriteria).forEach(([propertyName, criteria]) => {
+      if (propertyName.startsWith('_')) return; // Skip internal fields
+      if (typeof criteria === 'object' && criteria !== null) {
+        Object.entries(criteria).forEach(([operator, value]) => {
+          const upperOp = operator.toUpperCase();
+          if (upperOp === 'IN' && Array.isArray(value)) {
+            filters.push({ propertyName, operator: upperOp, values: value });
+          } else if (Array.isArray(value)) {
+            value.forEach((v) => filters.push({ propertyName, operator: upperOp, value: v }));
+          } else {
+            filters.push({ propertyName, operator: upperOp, value });
+          }
+        });
+      } else {
+        filters.push({ propertyName, operator: 'EQ', value: criteria });
+      }
+    });
+
+    if (filters.length > 0) {
+      searchBody.filterGroups.push({ filters });
+    }
+
+    // Fetch all results
+    let allResults: any[] = [];
+    let hasMore = true;
+    let after: string | undefined;
+
+    while (hasMore && allResults.length < 10000) {
+      if (after) searchBody.after = after;
+      const response = await this.makeRequest(`/crm/v3/objects/deals/search`, {
+        method: 'POST',
+        body: JSON.stringify(searchBody)
+      });
+      allResults = allResults.concat(response.results || []);
+      hasMore = response.paging?.next !== undefined;
+      after = response.paging?.next?.after;
+    }
+
+    // Extract company associations
+    return allResults.map((deal) => {
+      const companyAssoc = deal.associations?.companies?.results?.[0];
+      return {
+        deal,
+        companyId: companyAssoc?.id || null
+      };
+    });
+  }
+
+  // Get all closed won deals for a company
+  private async getCompanyClosedWonDeals(companyId: string): Promise<any[]> {
+    const searchBody = {
+      limit: 100,
+      properties: ['amount', 'closedate', 'dealstage', 'pipeline'],
+      filterGroups: [{
+        filters: [
+          { propertyName: 'dealstage', operator: 'EQ', value: 'closedwon' },
+          { propertyName: 'associations.company', operator: 'EQ', value: companyId }
+        ]
+      }]
+    };
+
+    try {
+      const response = await this.makeRequest(`/crm/v3/objects/deals/search`, {
+        method: 'POST',
+        body: JSON.stringify(searchBody)
+      });
+      return response.results || [];
+    } catch {
+      // If association filter fails, try getting deals through company associations
+      try {
+        const response = await this.makeRequest(
+          `/crm/v3/objects/companies/${companyId}/associations/deals`
+        );
+        const dealIds = response.results?.map((r: any) => r.id) || [];
+        if (dealIds.length === 0) return [];
+
+        // Fetch the actual deals
+        const dealsResponse = await this.makeRequest(`/crm/v3/objects/deals/batch/read`, {
+          method: 'POST',
+          body: JSON.stringify({
+            inputs: dealIds.map((id: string) => ({ id })),
+            properties: ['amount', 'closedate', 'dealstage', 'pipeline']
+          })
+        });
+
+        return (dealsResponse.results || []).filter(
+          (d: any) => d.properties?.dealstage === 'closedwon'
+        );
+      } catch {
+        return [];
+      }
+    }
+  }
+
   // Execute custom search query with aggregation
   async executeQueryWithAggregation(
     objectType: 'deals' | 'contacts' | 'companies' | 'tickets',
     filterCriteria: Record<string, any>,
-    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'ratio' | 'average_days_between',
+    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'ratio' | 'average_days_between' | 'sum_expansion',
     valueField?: string
   ): Promise<number> {
+    // Handle sum_expansion aggregation (new deal value - previous deal value for same company)
+    if (aggregationMethod === 'sum_expansion') {
+      // Get deals matching the filter criteria with their company associations
+      const dealsWithCompanies = await this.getDealsWithCompanies(filterCriteria);
+
+      let totalExpansion = 0;
+      const processedCompanies = new Set<string>();
+
+      for (const { deal, companyId } of dealsWithCompanies) {
+        const currentAmount = parseFloat(deal.properties?.amount || '0');
+        const currentCloseDate = new Date(deal.properties?.closedate);
+
+        if (!companyId) {
+          // No company associated - count full amount as expansion (new customer)
+          totalExpansion += currentAmount;
+          continue;
+        }
+
+        if (processedCompanies.has(companyId)) {
+          // Already processed this company in this batch
+          continue;
+        }
+        processedCompanies.add(companyId);
+
+        // Get all closed won deals for this company
+        const companyDeals = await this.getCompanyClosedWonDeals(companyId);
+
+        // Find the previous closed won deal (before the current one)
+        let previousDealAmount = 0;
+        let previousCloseDate: Date | null = null;
+
+        for (const prevDeal of companyDeals) {
+          if (prevDeal.id === deal.id) continue; // Skip current deal
+
+          const prevCloseDate = new Date(prevDeal.properties?.closedate);
+          if (prevCloseDate < currentCloseDate) {
+            // This is a previous deal - use the most recent one before current
+            if (!previousCloseDate || prevCloseDate > previousCloseDate) {
+              previousCloseDate = prevCloseDate;
+              previousDealAmount = parseFloat(prevDeal.properties?.amount || '0');
+            }
+          }
+        }
+
+        // Expansion = current deal - previous deal (or full amount if no previous)
+        const expansion = currentAmount - previousDealAmount;
+        totalExpansion += expansion;
+      }
+
+      return totalExpansion;
+    }
+
     // Handle ratio aggregation (e.g., for win rate: closedwon / (closedwon + closedlost))
     if (aggregationMethod === 'ratio') {
       if (!filterCriteria._numerator || !filterCriteria._denominator) {

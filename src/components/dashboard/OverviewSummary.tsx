@@ -179,9 +179,8 @@ export function OverviewSummary({ overview }: OverviewSummaryProps) {
             />
           </div>
 
-          {/* Highlights and Concerns */}
-          <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[var(--gray-100)]">
-            {/* Highlights */}
+          {/* Highlights and Concerns - Hidden for now */}
+          {/* <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[var(--gray-100)]">
             <div className="p-5">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 rounded-lg bg-emerald-100">
@@ -208,7 +207,6 @@ export function OverviewSummary({ overview }: OverviewSummaryProps) {
               </ul>
             </div>
 
-            {/* Concerns */}
             <div className="p-5">
               <div className="flex items-center gap-2 mb-3">
                 <div className="p-1.5 rounded-lg bg-amber-100">
@@ -234,7 +232,7 @@ export function OverviewSummary({ overview }: OverviewSummaryProps) {
                 ))}
               </ul>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
