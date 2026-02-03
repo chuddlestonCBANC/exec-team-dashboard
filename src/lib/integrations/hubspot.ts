@@ -168,7 +168,7 @@ export class HubSpotClient {
 
   // Execute custom search query with aggregation
   async executeQueryWithAggregation(
-    objectType: 'deals' | 'contacts' | 'companies',
+    objectType: 'deals' | 'contacts' | 'companies' | 'tickets',
     filterCriteria: Record<string, any>,
     aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'ratio' | 'average_days_between',
     valueField?: string
