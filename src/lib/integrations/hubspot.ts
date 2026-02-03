@@ -170,9 +170,38 @@ export class HubSpotClient {
   async executeQueryWithAggregation(
     objectType: 'deals' | 'contacts' | 'companies',
     filterCriteria: Record<string, any>,
-    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min',
+    aggregationMethod: 'sum' | 'count' | 'average' | 'max' | 'min' | 'ratio',
     valueField?: string
   ): Promise<number> {
+    // Handle ratio aggregation (e.g., for win rate: closedwon / (closedwon + closedlost))
+    if (aggregationMethod === 'ratio') {
+      if (!filterCriteria._numerator || !filterCriteria._denominator) {
+        throw new Error('Ratio aggregation requires _numerator and _denominator filter criteria');
+      }
+
+      const numeratorCriteria = filterCriteria._numerator;
+      const denominatorCriteria = filterCriteria._denominator;
+
+      // Execute both queries
+      const numeratorValue = await this.executeQueryWithAggregation(
+        objectType,
+        numeratorCriteria,
+        'count'
+      );
+      const denominatorValue = await this.executeQueryWithAggregation(
+        objectType,
+        denominatorCriteria,
+        'count'
+      );
+
+      if (denominatorValue === 0) {
+        return 0;
+      }
+
+      // Return as percentage (multiply by 100)
+      return (numeratorValue / denominatorValue) * 100;
+    }
+
     // Build search request
     const searchBody: any = {
       limit: 100,
