@@ -1927,6 +1927,28 @@ function generateOverviewSummary(pillarsWithScores: PillarWithScore[]): Overview
   const metricsImproved = allMetrics.filter((m) => m.trendDirection === 'up').length;
   const metricsDeclined = allMetrics.filter((m) => m.trendDirection === 'down').length;
 
+  // Calculate week-over-week change using previous values
+  const metricsWithPrevious = allMetrics.filter((m) => m.previousValue !== null && m.previousValue !== undefined);
+  let weekOverWeekChange = 0;
+  if (metricsWithPrevious.length > 0) {
+    // Calculate previous week's pillar scores using previousValue
+    const previousPillarScores = pillarsWithScores.map((pillar) => {
+      const pillarMetricsWithPrev = pillar.metrics.filter((m) => m.previousValue !== null && m.previousValue !== undefined);
+      if (pillarMetricsWithPrev.length === 0) return pillar.score;
+
+      const prevTotal = pillarMetricsWithPrev.reduce((sum, m) => {
+        const comparisonMode = m.comparisonMode || 'at_or_above';
+        return sum + getPercentageOfTarget(m.previousValue!, m.targetValue, comparisonMode);
+      }, 0);
+      return Math.round(prevTotal / pillarMetricsWithPrev.length);
+    });
+
+    const previousOverallScore = Math.round(
+      previousPillarScores.reduce((sum, s) => sum + s, 0) / previousPillarScores.length
+    );
+    weekOverWeekChange = overallScore - previousOverallScore;
+  }
+
   // Count active commitments (this would need to be fetched from DB in production)
   const activeCommitments = 4; // Placeholder
 
@@ -1983,7 +2005,7 @@ The executive team is mobilizing with active commitments to reverse these trends
     narrative,
     highlights: highlights.slice(0, 3),
     concerns: concerns.slice(0, 3),
-    weekOverWeekChange: 3,
+    weekOverWeekChange,
     pillarsOnTrack,
     pillarsAtRisk,
     pillarsOffTrack,
